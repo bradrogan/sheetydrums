@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# Node / Vite
+node_modules/
+.vite/
+*.tsbuildinfo
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Audio I/O — keep small fixtures in tests/, ignore everything else
+/audio/
+/output/
+*.wav
+*.mp3
+*.flac
+*.ogg
+!tests/**/*.wav
+!tests/**/*.mp3
+
+# Demucs / model caches (usually in ~/.cache but just in case)
+.cache/
+*.pt
+*.pth
+
+# Local env
+.env
+.env.local
+
+# Claude Code — local per-developer settings only; shared .claude/settings.json may be committed
+.claude/settings.local.json

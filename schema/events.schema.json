@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sheetydrums.local/schema/events.schema.json",
+  "title": "Drum transcription events (v1 draft)",
+  "description": "Contract between the Python pipeline (producer) and the web renderer (consumer). Expect to revise after the walking skeleton transcribes its first real song.",
+  "type": "object",
+  "required": ["version", "tempo_bpm", "time_signature", "bars"],
+  "properties": {
+    "version": { "type": "string", "const": "1" },
+    "audio_file": {
+      "type": "string",
+      "description": "Path to the drum-stem audio file the frontend should play back, relative to the events.json file."
+    },
+    "duration_seconds": { "type": "number", "minimum": 0 },
+    "tempo_bpm": { "type": "number", "minimum": 20, "maximum": 400 },
+    "time_signature": {
+      "type": "object",
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "type": "integer", "minimum": 1 },
+        "denominator": { "type": "integer", "enum": [2, 4, 8, 16] }
+      }
+    },
+    "bars": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index", "start_seconds", "notes"],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based bar number."
+          },
+          "start_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Absolute start time of the bar in the original audio."
+          },
+          "notes": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/Note" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Note": {
+      "type": "object",
+      "required": ["instrument", "position", "duration"],
+      "properties": {
+        "instrument": {
+          "type": "string",
+          "enum": [
+            "kick",
+            "snare",
+            "hihat_closed",
+            "hihat_open",
+            "hihat_chick",
+            "ride",
+            "crash",
+            "tom_high",
+            "tom_mid",
+            "tom_low"
+          ],
+          "description": "Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again."
+        },
+        "position": {
+          "type": "string",
+          "pattern": "^([0-9]+)(/([0-9]+))?$",
+          "description": "Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4."
+        },
+        "duration": {
+          "type": "string",
+          "enum": ["1", "1/2", "1/4", "1/8", "1/16", "1/32"],
+          "description": "Written note value. For tuplet notes this is the *written* duration; the actual played duration is duration * normal / actual. Drums are notated per-instrument-voice, so duration is a visual hint and does not imply temporal exclusivity (e.g., a crash with duration '1' doesn't prevent other instruments from sounding within the same bar)."
+        },
+        "sustain_until": {
+          "type": "string",
+          "pattern": "^([0-9]+)(/([0-9]+))?$",
+          "description": "Optional explicit end position within the same bar where this note stops ringing. Only meaningful for sustaining instruments (currently hihat_open). When absent, the implicit rule applies: an open hat sustains until the next hihat_* event in the score (closed, open, or chick). Use sustain_until for silent closes — when the drummer damps the cymbal without a chick or subsequent stick hit. Must be greater than `position` and within the same bar."
+        },
+        "tuplet": {
+          "type": "object",
+          "required": ["actual", "normal", "group"],
+          "description": "Marks this note as part of a tuplet group. Notes sharing the same `group` value within the same bar render under one bracket, regardless of instrument. The renderer determines bracket first/last by sorting group members on `position`. Tuplet groups do not cross bar lines.",
+          "properties": {
+            "actual": {
+              "type": "integer",
+              "minimum": 2,
+              "description": "Number of notes actually played in the bracket (3 for triplet, 5 for quintuplet, 6 for sextuplet)."
+            },
+            "normal": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of notes the bracket would normally occupy (2 for 8th-note triplet, 4 for sextuplet, 3 for duplet in compound time)."
+            },
+            "group": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Identifier shared by all notes in the same visual bracket. Must be unique within the bar; any short string (e.g., 't1', 't2')."
+            }
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Classifier confidence. Useful for filtering or highlighting uncertain hits in the UI."
+        }
+      }
+    }
+  }
+}
