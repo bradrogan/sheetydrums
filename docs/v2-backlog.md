@@ -24,6 +24,20 @@ Items explicitly out of scope for v1 that we want to revisit when the v1 pipelin
 
 - **Cross-bar `sustain_until`** — schema already allows values past the originating bar (open hat ringing across bar lines). Renderer needs a sustain-tie pass to draw a tie/decoration spanning bars. Not load-bearing for v1 since the implicit "next hat event" rule covers most cases.
 
+## Manual review & editing UI
+
+A transcription is rarely perfect. v1 produces `events.json` and stops; v2 should let the user verify and correct against the drum-only audio.
+
+- **Save the drum stem alongside `events.json`** — Demucs is already producing it; today we discard. Write it to `<output>.drums.wav` (or similar) so the frontend has something to play back. Cheap backend change: one file write in the separation stage's wrapper.
+- **Synced audio playback in the frontend** — load both `events.json` and `<output>.drums.wav`. Highlight the current bar / note as the audio plays. Smooth-scroll the score so the playhead stays in view.
+- **Click-to-seek** — clicking a note (or empty bar position) jumps audio playback to that time. Quick way to verify "does this hit really sound like a snare?"
+- **Loop region selector** — drag-select a bar range; audio loops over that region so the user can listen repeatedly while editing. Essential for working out tricky fills.
+- **Manual edit affordances on the score** — change a note's instrument (drag to a different staff line, or keyboard shortcut), add/remove notes, change duration. Edits flow back into `events.json` (persisted on save).
+- **Edit history / undo** — every edit is a discrete operation that can be undone. Probably an `operations.json` sidecar so we don't have to diff JSONs.
+- **Confidence-driven highlighting** — notes with low transcriber confidence rendered in a different color or with a `?` badge, so the user knows where to focus review effort.
+
+This is mostly a frontend project but implies two backend changes: (a) persist the drum stem from the separation stage, and (b) possibly emit a richer events.json that retains the raw onset times alongside the quantized positions, so edits can re-quantize without re-running the pipeline.
+
 ## Notes for future-me
 
 Whenever picking up a v2 item, re-read `docs/research/2026-05-pipeline-survey.md` first — the SOTA picture may have shifted, and what's "best available" in 2026 may not be best in 2027. The Inverse Drum Machine project is the one most worth re-checking; if its full-mix benchmarks become competitive with ADTOF, the licensing problem disappears.
