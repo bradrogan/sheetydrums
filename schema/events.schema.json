@@ -79,7 +79,7 @@
         "sustain_until": {
           "type": "string",
           "pattern": "^([0-9]+)(/([0-9]+))?$",
-          "description": "Optional explicit end position within the same bar where this note stops ringing. Only meaningful for sustaining instruments (currently hihat_open). When absent, the implicit rule applies: an open hat sustains until the next hihat_* event in the score (closed, open, or chick). Use sustain_until for silent closes — when the drummer damps the cymbal without a chick or subsequent stick hit. Must be greater than `position` and within the same bar."
+          "description": "Optional explicit end position where this note stops ringing, expressed as a fraction of a whole note from the *originating* bar's downbeat — same units and reference point as `position`. Only meaningful for sustaining instruments (currently hihat_open). When absent, the implicit rule applies: an open hat sustains until the next hihat_* event in the score (closed, open, or chick). Use sustain_until for silent closes — when the drummer damps the cymbal without a chick or subsequent stick hit. Values past the originating bar's end are allowed and indicate the sustain rings into subsequent bars (e.g., position '3/4', sustain_until '5/4' in 4/4 means the open hat rings from beat 4 of this bar through beat 2 of the next). The renderer determines which bars the sustain crosses based on the time signature. Must be greater than `position`."
         },
         "tuplet": {
           "type": "object",

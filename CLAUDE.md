@@ -18,6 +18,24 @@ A Python backend (`backend/`) ingests a full song mix, separates the drums with 
 - Backend and frontend are independent codebases in one repo. Don't introduce a top-level package manager that couples them.
 - The JSON schema is the single source of truth for the event format. If you change one half's understanding of the format, update the schema in the same change.
 
+## Backend layout
+
+`backend/` is a `uv` project (Python 3.12, `uv_build` backend). Layout:
+
+```
+backend/
+├── pyproject.toml
+├── uv.lock
+├── src/sheetydrums/
+│   ├── __init__.py   re-exports `main` for the `sheetydrums` console script
+│   ├── cli.py        typer CLI: sheetydrums INPUT.mp3 -o OUT.json
+│   ├── pipeline.py   transcribe() + private _stage functions (currently stubs)
+│   └── validate.py   jsonschema validation + cross-field sustain_until check
+└── tests/            (not created yet)
+```
+
+Run with `cd backend && uv run sheetydrums --help`. Stages in `pipeline.py` are stubs returning hardcoded data; each `_*` function gets replaced one at a time. The validator reads `schema/events.schema.json` via a relative path from the source tree — this works in editable dev install but will need `importlib.resources` if we ever ship a wheel.
+
 ## Status
 
-Skeleton only — git init + scaffolding. No code yet. Once the first stage lands in `backend/`, this file should be regenerated with `/init` (or by hand) so it reflects actual code layout.
+Walking skeleton works end to end on a stub: input audio → schema-valid events.json. Next stage to replace is `_separate` (Demucs). Then onset detection, classification, beat tracking, quantization.
