@@ -28,8 +28,10 @@ node_modules/
 *.mp3
 *.flac
 *.ogg
-!tests/**/*.wav
-!tests/**/*.mp3
+!**/tests/**/*.wav
+!**/tests/**/*.mp3
+!**/tests/**/*.ogg
+!**/tests/**/*.flac
 
 # Demucs / model caches (usually in ~/.cache but just in case)
 .cache/
