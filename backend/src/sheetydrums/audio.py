@@ -1,25 +1,23 @@
-"""Audio buffer type and loading helper.
-
-`load_audio` is a stub for the pipeline-infrastructure phase. The Pipeline
-orchestrator and all stub stages happen to ignore the audio contents, so the
-stub returns 4 seconds of silence regardless of input — enough to drive the
-shape of the pipeline end-to-end. When real stages land, this becomes a thin
-wrapper over `soundfile.read` (or `librosa.load`).
-"""
+"""Audio buffer type and loading helper."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import gcd
 from pathlib import Path
 
 import numpy as np
+import soundfile as sf
 from numpy.typing import NDArray
+from scipy import signal as scipy_signal
 
 
 @dataclass(frozen=True)
 class AudioBuffer:
     """Immutable audio samples + their sample rate.
 
-    `samples` is shape (n,) for mono, (n, channels) for multi-channel.
+    `samples` is shape (n,) for mono or (n, channels) for multi-channel.
+    Channels are preserved end-to-end; downstream stages (e.g. ADTOF) that
+    require mono should mix down at their own boundary.
     """
     samples: NDArray[np.floating]
     sample_rate: int
@@ -34,12 +32,28 @@ class AudioBuffer:
 
 
 def load_audio(path: Path, target_sample_rate: int = 44100) -> AudioBuffer:
-    """Load an audio file. Currently a stub that returns 4s of silence at 44.1 kHz.
+    """Decode an audio file and return it at `target_sample_rate`.
 
-    The path is accepted (and required to exist by the CLI) but its contents
-    are not yet read — once a real loader is wired in this will respect the
-    target sample rate and decode the actual file.
+    Uses libsndfile (via soundfile) for decoding, which handles wav, flac, ogg,
+    and mp3 (libsndfile >= 1.1). Resamples via scipy.signal.resample_poly if the
+    file's native rate doesn't match the target. Channels are preserved.
     """
-    _ = path  # accepted for interface parity; not yet read
-    samples: NDArray[np.floating] = np.zeros(4 * target_sample_rate, dtype=np.float32)
-    return AudioBuffer(samples=samples, sample_rate=target_sample_rate)
+    samples, sr = sf.read(str(path), dtype="float32", always_2d=False)
+    samples_arr: NDArray[np.floating] = samples
+    if sr != target_sample_rate:
+        samples_arr = _resample(samples_arr, sr, target_sample_rate)
+    return AudioBuffer(samples=samples_arr, sample_rate=target_sample_rate)
+
+
+def _resample(
+    samples: NDArray[np.floating],
+    src_rate: int,
+    dst_rate: int,
+) -> NDArray[np.floating]:
+    """Resample `samples` from `src_rate` to `dst_rate` using polyphase filtering."""
+    g: int = gcd(src_rate, dst_rate)
+    up: int = dst_rate // g
+    down: int = src_rate // g
+    axis: int = 0 if samples.ndim > 1 else -1
+    resampled = scipy_signal.resample_poly(samples, up, down, axis=axis)
+    return resampled.astype(np.float32)

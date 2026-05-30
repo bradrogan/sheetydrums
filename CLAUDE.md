@@ -84,4 +84,8 @@ Run with `cd backend && uv run sheetydrums --help`; test with `cd backend && uv 
 
 ## Status
 
-Walking skeleton works end to end on a stub: input audio → schema-valid events.json. Next implementations in dependency order: Demucs → ADTOF + LarsNet → 5→7 expansion → Beat This! → beat-grid quantization. The current `pipeline.py` stub names (`_detect_onsets`, `_classify`) will be replaced as the pipeline reshapes — ADTOF subsumes both.
+Walking skeleton works end to end with real Demucs. Pipeline currently:
+- **Demucs htdemucs_ft** — REAL (task #4 done). MPS-accelerated on Apple Silicon. First run downloads ~320 MB of weights to `~/.cache/torch/hub/`; subsequent runs are ~9 s for a 4-second clip.
+- ADTOF, LarsNet, sub-stem expander, Beat This!, quantizer — still stubs producing deterministic output.
+
+Next stage to swap is ADTOF (task #7) — its drum-stem input is now real.

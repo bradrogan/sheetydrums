@@ -7,8 +7,11 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "demucs>=4.0.1",
     "jsonschema>=4.26.0",
     "numpy>=2.4.6",
+    "scipy>=1.17.1",
+    "soundfile>=0.13.1",
     "typer>=0.25.1",
 ]
 
@@ -30,10 +33,14 @@ include = ["src", "tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false
-# typer's Argument/Option return Any internally; trying to type them strictly
-# is more noise than signal. Same for some jsonschema/numpy edges. Re-evaluate
-# if Any starts leaking into our own code surfaces.
+# typer / soundfile / scipy / demucs / torch all have weak type stubs that
+# leak Unknown/Any across our function boundaries. Disabling the related
+# rules keeps strict mode on for code we control while not chasing noise
+# from third-party stub gaps. Re-evaluate if Any starts polluting our own
+# returns or attribute access patterns.
 reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

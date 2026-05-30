@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
+
 from sheetydrums.audio import AudioBuffer
 from sheetydrums.interfaces import (
     Beat,
@@ -78,9 +81,13 @@ def _make_grid() -> BeatGrid:
 
 
 def _dummy_audio(tmp_path: Path) -> Path:
-    """Create a placeholder file for the CLI's existence check (contents ignored)."""
-    p: Path = tmp_path / "dummy.mp3"
-    p.write_bytes(b"")
+    """Write a tiny silent WAV so the real load_audio can decode it.
+
+    Contents are ignored — the tests use _FakeSeparator/_FakeTranscriber which
+    don't inspect the audio. We just need the file to exist and be valid.
+    """
+    p: Path = tmp_path / "dummy.wav"
+    sf.write(str(p), np.zeros(44100, dtype=np.float32), 44100)
     return p
 
 
