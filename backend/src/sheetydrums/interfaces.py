@@ -56,10 +56,16 @@ class DrumHit:
 
 
 @dataclass(frozen=True)
+class Beat:
+    """One beat in the tempo grid."""
+    time: float        # seconds from audio start
+    is_downbeat: bool  # True if this beat is the first beat of a bar
+
+
+@dataclass(frozen=True)
 class BeatGrid:
     """Output of the beat-tracking stage."""
-    beats: tuple[float, ...]
-    downbeats: tuple[bool, ...]
+    beats: tuple[Beat, ...]
     tempo_bpm: float
     time_signature: tuple[int, int]
 

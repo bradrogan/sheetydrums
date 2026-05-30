@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from sheetydrums.audio import AudioBuffer
-from sheetydrums.interfaces import BeatGrid, DrumHit, DrumSubStems, TranscriberDrumClass
+from sheetydrums.interfaces import Beat, BeatGrid, DrumHit, DrumSubStems, TranscriberDrumClass
 from sheetydrums.pipeline import Pipeline
 from sheetydrums.stages import (
     PassThroughExpander,
@@ -62,8 +62,12 @@ class _FakeSubStemSeparator:
 
 def _make_grid() -> BeatGrid:
     return BeatGrid(
-        beats=(0.0, 0.5, 1.0, 1.5),
-        downbeats=(True, False, False, False),
+        beats=(
+            Beat(time=0.0, is_downbeat=True),
+            Beat(time=0.5, is_downbeat=False),
+            Beat(time=1.0, is_downbeat=False),
+            Beat(time=1.5, is_downbeat=False),
+        ),
         tempo_bpm=120.0,
         time_signature=(4, 4),
     )

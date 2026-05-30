@@ -101,8 +101,7 @@ class Pipeline:
             {
                 "tempo_bpm": grid.tempo_bpm,
                 "time_signature": list(grid.time_signature),
-                "beats": list(grid.beats),
-                "downbeats": list(grid.downbeats),
+                "beats": [{"time": b.time, "downbeat": b.is_downbeat} for b in grid.beats],
             },
         )
 

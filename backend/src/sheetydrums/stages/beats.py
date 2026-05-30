@@ -7,7 +7,7 @@ the input audio's duration.
 from __future__ import annotations
 
 from sheetydrums.audio import AudioBuffer
-from sheetydrums.interfaces import BeatGrid
+from sheetydrums.interfaces import Beat, BeatGrid
 
 
 class StubBeatThisTracker:
@@ -18,11 +18,11 @@ class StubBeatThisTracker:
         ibi: float = 60.0 / tempo_bpm  # inter-beat interval, seconds
         duration: float = max(mix.duration_seconds, 4.0)
         n_beats: int = int(duration / ibi)
-        beats: tuple[float, ...] = tuple(i * ibi for i in range(n_beats))
-        downbeats: tuple[bool, ...] = tuple(i % 4 == 0 for i in range(n_beats))
+        beats: tuple[Beat, ...] = tuple(
+            Beat(time=i * ibi, is_downbeat=(i % 4 == 0)) for i in range(n_beats)
+        )
         return BeatGrid(
             beats=beats,
-            downbeats=downbeats,
             tempo_bpm=tempo_bpm,
             time_signature=(4, 4),
         )

@@ -51,7 +51,7 @@ class StubQuantizer:
         beat_seconds: float = 60.0 / grid.tempo_bpm
         whole_note_seconds: float = beat_seconds * grid.time_signature[1]
         bar_seconds: float = beat_seconds * grid.time_signature[0]
-        downbeat_times: list[float] = [t for t, is_db in zip(grid.beats, grid.downbeats) if is_db]
+        downbeat_times: list[float] = [b.time for b in grid.beats if b.is_downbeat]
 
         bar_notes: dict[int, list[Note]] = {
             idx: [] for idx in range(1, len(downbeat_times) + 1)
