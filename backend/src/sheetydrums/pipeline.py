@@ -1,61 +1,123 @@
-"""Pipeline orchestration: audio file → schema-compliant events dict.
+"""Pipeline orchestrator.
 
-Every stage is currently a stub returning trivial data — just enough to make
-the data contract round-trip end to end. Real implementations replace the
-private functions below one at a time.
+Imports nothing from any audio/ML library. Stage implementations are injected
+via the constructor — concrete model wrappers in `stages/` for production,
+fakes in tests. To skip the LarsNet sub-stem branch, pass
+`substem_separator=None` and a `PassThroughExpander` as `class_expander`.
 """
+from __future__ import annotations
+
+import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-SCHEMA_VERSION = "1"
+from sheetydrums.audio import load_audio
+from sheetydrums.debug import DebugSink
 
+if TYPE_CHECKING:
+    from sheetydrums.interfaces import (
+        BeatTracker,
+        ClassExpander,
+        DrumSubStemSeparator,
+        DrumTranscriber,
+        MixSeparator,
+        Quantizer,
+        TranscriptionResult,
+    )
 
-def transcribe(audio_path: Path) -> dict:
-    """Run the full pipeline and return a schema-compliant events dict."""
-    drums = _separate(audio_path)
-    onsets = _detect_onsets(drums)
-    classified = _classify(onsets, drums)
-    tempo, time_sig, beats = _track_beats(drums)
-    bars = _quantize(classified, beats, tempo, time_sig)
-
-    return {
-        "version": SCHEMA_VERSION,
-        "audio_file": audio_path.name,
-        "duration_seconds": 2.0,
-        "tempo_bpm": tempo,
-        "time_signature": time_sig,
-        "bars": bars,
-    }
+from sheetydrums.interfaces import TranscriptionResult  # noqa: E402  (re-import for runtime use)
 
 
-def _separate(audio_path: Path):
-    """Source separation. Real version will run Demucs and return the drum stem."""
-    return audio_path
+class Pipeline:
+    """Runs the drum-transcription stages in dependency order."""
 
+    def __init__(
+        self,
+        *,
+        separator: MixSeparator,
+        transcriber: DrumTranscriber,
+        beat_tracker: BeatTracker,
+        quantizer: Quantizer,
+        class_expander: ClassExpander,
+        substem_separator: DrumSubStemSeparator | None = None,
+        debug_sink: DebugSink | None = None,
+        verbose: bool = True,
+    ) -> None:
+        self._separator = separator
+        self._transcriber = transcriber
+        self._beat_tracker = beat_tracker
+        self._quantizer = quantizer
+        self._class_expander = class_expander
+        self._substem_separator = substem_separator
+        self._debug = debug_sink if debug_sink is not None else DebugSink(None)
+        self._verbose = verbose
 
-def _detect_onsets(drums) -> list[float]:
-    """Drum onset detection. Stub: a hit on every quarter beat at 120 BPM."""
-    return [0.0, 0.5, 1.0, 1.5]
+    def transcribe(self, audio_path: Path) -> TranscriptionResult:
+        mix = load_audio(audio_path)
+        self._log(f"loaded {audio_path.name}: {mix.duration_seconds:.2f}s @ {mix.sample_rate} Hz")
+        self._debug.write_audio_placeholder("input-mix", mix)
 
+        drums = self._separator.separate(mix)
+        self._log(f"[separator:{self._separator.name}] drum stem: {drums.duration_seconds:.2f}s")
+        self._debug.write_audio_placeholder(f"separator-{self._separator.name}", drums)
 
-def _classify(onsets: list[float], drums) -> list[dict]:
-    """Classify each onset to one of the 10 drum classes. Stub: all snare."""
-    return [{"time_seconds": t, "instrument": "snare", "confidence": 0.5} for t in onsets]
+        hits = self._transcriber.transcribe(drums)
+        self._log(
+            f"[transcriber:{self._transcriber.name}] {len(hits)} hits, "
+            f"vocab={self._transcriber.vocabulary}"
+        )
+        self._debug.write_json(
+            f"transcriber-{self._transcriber.name}",
+            [{"time": h.time, "class": h.drum_class, "confidence": h.confidence} for h in hits],
+        )
 
+        substems = None
+        if self._substem_separator is not None:
+            substems = self._substem_separator.separate(drums)
+            self._log(f"[substem:{self._substem_separator.name}] 5 sub-stems extracted")
+            self._debug.write_text(
+                f"substem-{self._substem_separator.name}",
+                "kick + snare + hihat + toms + cymbals sub-stems extracted",
+            )
 
-def _track_beats(drums) -> tuple[float, dict, list[float]]:
-    """Detect tempo, time signature, beat positions. Stub: 120 BPM, 4/4."""
-    return 120.0, {"numerator": 4, "denominator": 4}, [0.0, 0.5, 1.0, 1.5]
+        hits = self._class_expander.expand(hits, substems)
+        expanded_vocab = sorted({h.drum_class for h in hits})
+        self._log(
+            f"[expander:{self._class_expander.name}] {len(hits)} hits, "
+            f"vocab={tuple(expanded_vocab)}"
+        )
+        self._debug.write_json(
+            f"expander-{self._class_expander.name}",
+            [{"time": h.time, "class": h.drum_class, "confidence": h.confidence} for h in hits],
+        )
 
+        grid = self._beat_tracker.track(mix)
+        self._log(
+            f"[beats:{self._beat_tracker.name}] {grid.tempo_bpm:.1f} BPM, "
+            f"{grid.time_signature[0]}/{grid.time_signature[1]}, {len(grid.beats)} beats"
+        )
+        self._debug.write_json(
+            f"beats-{self._beat_tracker.name}",
+            {
+                "tempo_bpm": grid.tempo_bpm,
+                "time_signature": list(grid.time_signature),
+                "beats": list(grid.beats),
+                "downbeats": list(grid.downbeats),
+            },
+        )
 
-def _quantize(classified, beats, tempo, time_sig) -> list[dict]:
-    """Group classified hits into bars with positions/durations. Stub: one bar, four snare quarter notes."""
-    return [
-        {
-            "index": 1,
-            "start_seconds": 0.0,
-            "notes": [
-                {"instrument": "snare", "position": p, "duration": "1/4", "confidence": 0.5}
-                for p in ["0", "1/4", "1/2", "3/4"]
-            ],
-        }
-    ]
+        bars = self._quantizer.quantize(hits, grid)
+        n_notes = sum(len(b.notes) for b in bars)
+        self._log(f"[quantizer:{self._quantizer.name}] {len(bars)} bars, {n_notes} notes")
+
+        return TranscriptionResult(
+            audio_file=audio_path.name,
+            duration_seconds=mix.duration_seconds,
+            tempo_bpm=grid.tempo_bpm,
+            time_signature=grid.time_signature,
+            bars=tuple(bars),
+        )
+
+    def _log(self, msg: str) -> None:
+        if self._verbose:
+            print(f"  {msg}", file=sys.stderr)

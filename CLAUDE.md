@@ -43,21 +43,44 @@ Reference docs:
 
 ## Backend layout
 
-`backend/` is a `uv` project (Python 3.12, `uv_build` backend). Layout:
+`backend/` is a `uv` project (Python 3.12, `uv_build` backend). Architecture is dependency-injected: Protocol-based stage interfaces, concrete implementations selected by the factory based on CLI flags.
 
 ```
-backend/
-├── pyproject.toml
-├── uv.lock
-├── src/sheetydrums/
-│   ├── __init__.py   re-exports `main` for the `sheetydrums` console script
-│   ├── cli.py        typer CLI: sheetydrums INPUT.mp3 -o OUT.json
-│   ├── pipeline.py   transcribe() + private _stage functions (currently stubs)
-│   └── validate.py   jsonschema validation + cross-field sustain_until check
-└── tests/            (not created yet)
+backend/src/sheetydrums/
+├── __init__.py        re-exports `main`
+├── cli.py             typer CLI; serializes TranscriptionResult to schema dict
+├── config.py          CLIConfig (use_larsnet, debug_dir, verbose)
+├── interfaces.py      Protocols (MixSeparator, DrumTranscriber, BeatTracker,
+│                      DrumSubStemSeparator, ClassExpander, Quantizer) +
+│                      data types (DrumHit, BeatGrid, Note, Bar, etc.)
+├── pipeline.py        Pipeline class — orchestrates injected stages
+├── factory.py         build_pipeline(config) — single point selecting impls
+├── audio.py           AudioBuffer + (stub) load_audio
+├── debug.py           DebugSink — per-stage artifact dumps when --debug-dir set
+├── stages/            One module per stage. Each has a `Stub*` class today;
+│   ├── separation.py    real impl (Demucs/ADTOF/...) lands when its task ticket
+│   ├── transcription.py is worked, replacing the stub at the factory layer.
+│   ├── substem.py
+│   ├── expansion.py     (PassThroughExpander + StubSubStemExpander)
+│   ├── beats.py
+│   └── quantize.py      StubQuantizer + the v1 vocabulary-collapse map
+└── validate.py        jsonschema validation + cross-field sustain_until check
+
+backend/tests/
+└── test_pipeline.py   DI pattern tests — pure fakes, no model installs
 ```
 
-Run with `cd backend && uv run sheetydrums --help`. Stages in `pipeline.py` are stubs returning hardcoded data; each `_*` function gets replaced one at a time. The validator reads `schema/events.schema.json` via a relative path from the source tree — this works in editable dev install but will need `importlib.resources` if we ever ship a wheel.
+CLI:
+- `sheetydrums INPUT.mp3 -o OUT.json` — full pipeline (7-class output)
+- `--no-larsnet` — skip the sub-stem branch (5-class collapsed output)
+- `--debug-dir DIR` — dump each stage's intermediate to `DIR/NN-stage.{json,txt}`
+- `--quiet` / `-q` — suppress per-stage stat lines
+
+Run with `cd backend && uv run sheetydrums --help`; test with `cd backend && uv run pytest`.
+
+**Vocabulary collapse rule** (in `stages/quantize.py`'s `_INSTRUMENT_MAP`): coarse labels from the 5-class transcriber that don't make it through expansion collapse to schema-valid defaults at the emit boundary: `hihat → hihat_closed`, `cymbal → ride`, `tom → tom_mid`. This makes the output always schema-valid, with `--no-larsnet` simply producing a less-refined (but valid) transcription.
+
+**Stage swap pattern**: when a real model wrapper lands (e.g. `DemucsSeparator` replacing `StubDemucsSeparator`), the change is local to its stage module and `factory.py`. Protocols ensure the rest of the pipeline doesn't notice. Tests stay green because they inject fakes, not real models. The validator reads `schema/events.schema.json` via a relative path from the source tree — this works in editable dev install but will need `importlib.resources` if we ever ship a wheel.
 
 ## Status
 

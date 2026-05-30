@@ -8,6 +8,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "jsonschema>=4.26.0",
+    "numpy>=2.4.6",
     "typer>=0.25.1",
 ]
 
@@ -17,3 +18,8 @@ sheetydrums = "sheetydrums:main"
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
