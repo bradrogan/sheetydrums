@@ -9,9 +9,40 @@ module imports none of them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, TypedDict, runtime_checkable
 
 from sheetydrums.audio import AudioBuffer
+
+
+# === Drum vocabulary types ===
+
+# The 5 classes a coarse drum transcriber (ADTOF) emits.
+TranscriberDrumClass = Literal["kick", "snare", "hihat", "tom", "cymbal"]
+
+# The vocabulary the schema accepts on disk. v1 transcriber emits 7 of these
+# (no hihat_chick, no tom_high/tom_low) — see CLAUDE.md scope and docs/v2-backlog.md.
+SchemaDrumClass = Literal[
+    "kick", "snare",
+    "hihat_closed", "hihat_open", "hihat_chick",
+    "ride", "crash",
+    "tom_high", "tom_mid", "tom_low",
+]
+
+# Union: a DrumHit's drum_class is one of these at any point in the pipeline.
+# Pre-expansion hits hold TranscriberDrumClass values; post-expansion hits
+# typically hold SchemaDrumClass values; the quantizer enforces the schema
+# vocabulary at the emit boundary via `_to_schema_class`.
+DrumClass = TranscriberDrumClass | SchemaDrumClass
+
+# Written note value (durations only — tuplet ratios are conveyed separately).
+Duration = Literal["1", "1/2", "1/4", "1/8", "1/16", "1/32"]
+
+
+class Tuplet(TypedDict):
+    """Shape of the `tuplet` field on a Note in the emitted schema."""
+    actual: int
+    normal: int
+    group: str
 
 
 # === Data types flowing between stages ===
@@ -20,7 +51,7 @@ from sheetydrums.audio import AudioBuffer
 class DrumHit:
     """One detected drum strike, expressed in absolute time within the audio."""
     time: float
-    drum_class: str
+    drum_class: DrumClass
     confidence: float
 
 
@@ -46,12 +77,12 @@ class DrumSubStems:
 @dataclass(frozen=True)
 class Note:
     """A single note in the final transcription, ready for schema emission."""
-    instrument: str
+    instrument: SchemaDrumClass
     position: str
-    duration: str
+    duration: Duration
     confidence: float | None = None
     sustain_until: str | None = None
-    tuplet: dict | None = None
+    tuplet: Tuplet | None = None
 
 
 @dataclass(frozen=True)
@@ -76,12 +107,7 @@ class TranscriptionResult:
 
 @runtime_checkable
 class MixSeparator(Protocol):
-    """Separates a full music mix into its drum stem.
-
-    Implementations may internally produce other stems (bass, vocals, other); only
-    the drums stem flows downstream. The `name` attribute is used by the
-    orchestrator for logging and debug-file naming.
-    """
+    """Separates a full music mix into its drum stem."""
     name: str
 
     def separate(self, mix: AudioBuffer) -> AudioBuffer: ...
@@ -89,14 +115,9 @@ class MixSeparator(Protocol):
 
 @runtime_checkable
 class DrumTranscriber(Protocol):
-    """Detects drum onsets in a drums stem and assigns a coarse class to each.
-
-    The output vocabulary is implementation-defined. `vocabulary` reports the
-    classes a given transcriber emits — downstream class-expansion stages should
-    consult this rather than hard-coding assumptions.
-    """
+    """Detects drum onsets in a drums stem and assigns a coarse class to each."""
     name: str
-    vocabulary: tuple[str, ...]
+    vocabulary: tuple[TranscriberDrumClass, ...]
 
     def transcribe(self, drums: AudioBuffer) -> tuple[DrumHit, ...]: ...
 
@@ -111,11 +132,7 @@ class DrumSubStemSeparator(Protocol):
 
 @runtime_checkable
 class ClassExpander(Protocol):
-    """Refines coarse drum-class labels using sub-stem features.
-
-    When no sub-stems are available, an expander should either return hits
-    unchanged (PassThroughExpander) or refuse — never silently mis-label.
-    """
+    """Refines coarse drum-class labels using sub-stem features."""
     name: str
 
     def expand(

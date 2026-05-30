@@ -10,7 +10,7 @@ from sheetydrums.audio import AudioBuffer
 
 
 class StubDemucsSeparator:
-    name = "demucs-stub"
+    name: str = "demucs-stub"
 
     def separate(self, mix: AudioBuffer) -> AudioBuffer:
         return mix

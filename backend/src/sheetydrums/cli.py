@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import typer
 
 from sheetydrums.config import CLIConfig
 from sheetydrums.factory import build_pipeline
 from sheetydrums.interfaces import Note, TranscriptionResult
+from sheetydrums.pipeline import Pipeline
 from sheetydrums.validate import validate
 
 
@@ -45,25 +47,25 @@ def transcribe_command(
     ),
 ) -> None:
     """Transcribe an audio file's drum part to events.json."""
-    config = CLIConfig(
+    config: CLIConfig = CLIConfig(
         use_larsnet=not no_larsnet,
         debug_dir=debug_dir,
         verbose=not quiet,
     )
-    pipeline = build_pipeline(config)
+    pipeline: Pipeline = build_pipeline(config)
 
     typer.echo(f"Transcribing {audio.name}…")
-    result = pipeline.transcribe(audio)
-    events = serialize_to_schema(result)
+    result: TranscriptionResult = pipeline.transcribe(audio)
+    events: dict[str, Any] = serialize_to_schema(result)
     validate(events)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(events, indent=2) + "\n")
-    n_notes = sum(len(b["notes"]) for b in events["bars"])
+    n_notes: int = sum(len(b["notes"]) for b in events["bars"])
     typer.echo(f"Wrote {output} ({n_notes} notes across {len(events['bars'])} bars)")
 
 
-def serialize_to_schema(result: TranscriptionResult) -> dict:
+def serialize_to_schema(result: TranscriptionResult) -> dict[str, Any]:
     """Convert the dataclass result to a dict that matches the JSON schema."""
     return {
         "version": "1",
@@ -85,8 +87,8 @@ def serialize_to_schema(result: TranscriptionResult) -> dict:
     }
 
 
-def _note_to_dict(note: Note) -> dict:
-    d: dict = {
+def _note_to_dict(note: Note) -> dict[str, Any]:
+    d: dict[str, Any] = {
         "instrument": note.instrument,
         "position": note.position,
         "duration": note.duration,

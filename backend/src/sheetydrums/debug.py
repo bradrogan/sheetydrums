@@ -18,10 +18,10 @@ class DebugSink:
     """
 
     def __init__(self, dir: Path | None) -> None:
-        self._dir = dir
+        self._dir: Path | None = dir
         if self._dir is not None:
             self._dir.mkdir(parents=True, exist_ok=True)
-        self._step = 0
+        self._step: int = 0
 
     @property
     def enabled(self) -> bool:
@@ -30,13 +30,13 @@ class DebugSink:
     def write_json(self, stage_name: str, data: Any) -> None:
         if self._dir is None:
             return
-        path = self._next_path(stage_name, "json")
+        path: Path = self._next_path(stage_name, "json")
         path.write_text(json.dumps(data, indent=2, default=str) + "\n")
 
     def write_text(self, stage_name: str, text: str) -> None:
         if self._dir is None:
             return
-        path = self._next_path(stage_name, "txt")
+        path: Path = self._next_path(stage_name, "txt")
         path.write_text(text + "\n")
 
     def write_audio_placeholder(self, stage_name: str, audio: AudioBuffer) -> None:

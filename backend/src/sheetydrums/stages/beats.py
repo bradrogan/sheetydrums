@@ -11,15 +11,15 @@ from sheetydrums.interfaces import BeatGrid
 
 
 class StubBeatThisTracker:
-    name = "beat-this-stub"
+    name: str = "beat-this-stub"
 
     def track(self, mix: AudioBuffer) -> BeatGrid:
-        tempo_bpm = 120.0
-        ibi = 60.0 / tempo_bpm  # 0.5 s
-        duration = max(mix.duration_seconds, 4.0)
-        n_beats = int(duration / ibi)
-        beats = tuple(i * ibi for i in range(n_beats))
-        downbeats = tuple(i % 4 == 0 for i in range(n_beats))
+        tempo_bpm: float = 120.0
+        ibi: float = 60.0 / tempo_bpm  # inter-beat interval, seconds
+        duration: float = max(mix.duration_seconds, 4.0)
+        n_beats: int = int(duration / ibi)
+        beats: tuple[float, ...] = tuple(i * ibi for i in range(n_beats))
+        downbeats: tuple[bool, ...] = tuple(i % 4 == 0 for i in range(n_beats))
         return BeatGrid(
             beats=beats,
             downbeats=downbeats,

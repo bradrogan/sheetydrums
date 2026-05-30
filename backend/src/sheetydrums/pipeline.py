@@ -9,23 +9,23 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from sheetydrums.audio import load_audio
+from sheetydrums.audio import AudioBuffer, load_audio
 from sheetydrums.debug import DebugSink
-
-if TYPE_CHECKING:
-    from sheetydrums.interfaces import (
-        BeatTracker,
-        ClassExpander,
-        DrumSubStemSeparator,
-        DrumTranscriber,
-        MixSeparator,
-        Quantizer,
-        TranscriptionResult,
-    )
-
-from sheetydrums.interfaces import TranscriptionResult  # noqa: E402  (re-import for runtime use)
+from sheetydrums.interfaces import (
+    Bar,
+    BeatGrid,
+    BeatTracker,
+    ClassExpander,
+    DrumClass,
+    DrumHit,
+    DrumSubStemSeparator,
+    DrumSubStems,
+    DrumTranscriber,
+    MixSeparator,
+    Quantizer,
+    TranscriptionResult,
+)
 
 
 class Pipeline:
@@ -43,25 +43,25 @@ class Pipeline:
         debug_sink: DebugSink | None = None,
         verbose: bool = True,
     ) -> None:
-        self._separator = separator
-        self._transcriber = transcriber
-        self._beat_tracker = beat_tracker
-        self._quantizer = quantizer
-        self._class_expander = class_expander
-        self._substem_separator = substem_separator
-        self._debug = debug_sink if debug_sink is not None else DebugSink(None)
-        self._verbose = verbose
+        self._separator: MixSeparator = separator
+        self._transcriber: DrumTranscriber = transcriber
+        self._beat_tracker: BeatTracker = beat_tracker
+        self._quantizer: Quantizer = quantizer
+        self._class_expander: ClassExpander = class_expander
+        self._substem_separator: DrumSubStemSeparator | None = substem_separator
+        self._debug: DebugSink = debug_sink if debug_sink is not None else DebugSink(None)
+        self._verbose: bool = verbose
 
     def transcribe(self, audio_path: Path) -> TranscriptionResult:
-        mix = load_audio(audio_path)
+        mix: AudioBuffer = load_audio(audio_path)
         self._log(f"loaded {audio_path.name}: {mix.duration_seconds:.2f}s @ {mix.sample_rate} Hz")
         self._debug.write_audio_placeholder("input-mix", mix)
 
-        drums = self._separator.separate(mix)
+        drums: AudioBuffer = self._separator.separate(mix)
         self._log(f"[separator:{self._separator.name}] drum stem: {drums.duration_seconds:.2f}s")
         self._debug.write_audio_placeholder(f"separator-{self._separator.name}", drums)
 
-        hits = self._transcriber.transcribe(drums)
+        hits: tuple[DrumHit, ...] = self._transcriber.transcribe(drums)
         self._log(
             f"[transcriber:{self._transcriber.name}] {len(hits)} hits, "
             f"vocab={self._transcriber.vocabulary}"
@@ -71,7 +71,7 @@ class Pipeline:
             [{"time": h.time, "class": h.drum_class, "confidence": h.confidence} for h in hits],
         )
 
-        substems = None
+        substems: DrumSubStems | None = None
         if self._substem_separator is not None:
             substems = self._substem_separator.separate(drums)
             self._log(f"[substem:{self._substem_separator.name}] 5 sub-stems extracted")
@@ -81,7 +81,7 @@ class Pipeline:
             )
 
         hits = self._class_expander.expand(hits, substems)
-        expanded_vocab = sorted({h.drum_class for h in hits})
+        expanded_vocab: list[DrumClass] = sorted({h.drum_class for h in hits})
         self._log(
             f"[expander:{self._class_expander.name}] {len(hits)} hits, "
             f"vocab={tuple(expanded_vocab)}"
@@ -91,7 +91,7 @@ class Pipeline:
             [{"time": h.time, "class": h.drum_class, "confidence": h.confidence} for h in hits],
         )
 
-        grid = self._beat_tracker.track(mix)
+        grid: BeatGrid = self._beat_tracker.track(mix)
         self._log(
             f"[beats:{self._beat_tracker.name}] {grid.tempo_bpm:.1f} BPM, "
             f"{grid.time_signature[0]}/{grid.time_signature[1]}, {len(grid.beats)} beats"
@@ -106,8 +106,8 @@ class Pipeline:
             },
         )
 
-        bars = self._quantizer.quantize(hits, grid)
-        n_notes = sum(len(b.notes) for b in bars)
+        bars: tuple[Bar, ...] = self._quantizer.quantize(hits, grid)
+        n_notes: int = sum(len(b.notes) for b in bars)
         self._log(f"[quantizer:{self._quantizer.name}] {len(bars)} bars, {n_notes} notes")
 
         return TranscriptionResult(

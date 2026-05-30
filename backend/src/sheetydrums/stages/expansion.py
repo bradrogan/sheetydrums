@@ -16,11 +16,11 @@ interface signature.
 """
 from __future__ import annotations
 
-from sheetydrums.interfaces import DrumHit, DrumSubStems
+from sheetydrums.interfaces import DrumHit, DrumSubStems, SchemaDrumClass
 
 
 class PassThroughExpander:
-    name = "passthrough"
+    name: str = "passthrough"
 
     def expand(
         self,
@@ -40,7 +40,7 @@ class StubSubStemExpander:
     - tom → tom_mid (v1 collapse; all tom hits report as tom_mid until pitch
       distinction is added in v2)
     """
-    name = "substem-expander-stub"
+    name: str = "substem-expander-stub"
 
     def expand(
         self,
@@ -50,16 +50,16 @@ class StubSubStemExpander:
         if substems is None:
             return hits
         out: list[DrumHit] = []
-        hihat_n = 0
-        cymbal_n = 0
+        hihat_n: int = 0
+        cymbal_n: int = 0
         for h in hits:
             if h.drum_class == "hihat":
-                refined = "hihat_open" if hihat_n % 2 else "hihat_closed"
-                out.append(DrumHit(h.time, refined, h.confidence))
+                refined_hihat: SchemaDrumClass = "hihat_open" if hihat_n % 2 else "hihat_closed"
+                out.append(DrumHit(h.time, refined_hihat, h.confidence))
                 hihat_n += 1
             elif h.drum_class == "cymbal":
-                refined = "crash" if cymbal_n % 2 else "ride"
-                out.append(DrumHit(h.time, refined, h.confidence))
+                refined_cymbal: SchemaDrumClass = "crash" if cymbal_n % 2 else "ride"
+                out.append(DrumHit(h.time, refined_cymbal, h.confidence))
                 cymbal_n += 1
             elif h.drum_class == "tom":
                 out.append(DrumHit(h.time, "tom_mid", h.confidence))

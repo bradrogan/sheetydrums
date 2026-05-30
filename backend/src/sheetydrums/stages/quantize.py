@@ -7,25 +7,38 @@ from __future__ import annotations
 
 from fractions import Fraction
 
-from sheetydrums.interfaces import Bar, BeatGrid, DrumHit, Note
+from sheetydrums.interfaces import (
+    Bar,
+    BeatGrid,
+    DrumClass,
+    DrumHit,
+    Note,
+    SchemaDrumClass,
+)
 
 
-# v1 vocabulary collapse — applied at the emit boundary so the output is always
-# schema-valid regardless of which upstream stages ran:
-#   - "tom" → tom_mid (pitch distinction deferred; see docs/v2-backlog.md)
-#   - "hihat" → hihat_closed (default when --no-larsnet skipped the open/closed split)
-#   - "cymbal" → ride (default when --no-larsnet skipped the ride/crash split)
-# When the SubStemExpander runs it produces the refined labels directly; the
-# coarse labels never reach this map in the LarsNet-on path.
-_INSTRUMENT_MAP = {
-    "tom": "tom_mid",
-    "hihat": "hihat_closed",
-    "cymbal": "ride",
-}
+def _to_schema_class(c: DrumClass) -> SchemaDrumClass:
+    """Narrow a DrumClass to a SchemaDrumClass.
+
+    The 5-class transcriber emits "hihat", "tom", and "cymbal" — none of which
+    appear in the schema vocab. We collapse each to a sensible default at the
+    emit boundary so output is always schema-valid:
+      hihat → hihat_closed (v1: open/closed distinction requires LarsNet)
+      tom → tom_mid (v1: pitch distinction deferred to v2)
+      cymbal → ride (v1: ride/crash distinction requires LarsNet)
+    Other DrumClass values are already in SchemaDrumClass and pass through.
+    """
+    if c == "hihat":
+        return "hihat_closed"
+    if c == "tom":
+        return "tom_mid"
+    if c == "cymbal":
+        return "ride"
+    return c
 
 
 class StubQuantizer:
-    name = "16th-snap"
+    name: str = "16th-snap"
 
     def quantize(
         self,
@@ -35,24 +48,26 @@ class StubQuantizer:
         if not grid.beats:
             return ()
 
-        beat_seconds = 60.0 / grid.tempo_bpm
-        whole_note_seconds = beat_seconds * grid.time_signature[1]
-        bar_seconds = beat_seconds * grid.time_signature[0]
-        downbeat_times = [t for t, is_db in zip(grid.beats, grid.downbeats) if is_db]
+        beat_seconds: float = 60.0 / grid.tempo_bpm
+        whole_note_seconds: float = beat_seconds * grid.time_signature[1]
+        bar_seconds: float = beat_seconds * grid.time_signature[0]
+        downbeat_times: list[float] = [t for t, is_db in zip(grid.beats, grid.downbeats) if is_db]
 
-        # Mutable accumulators per bar
-        bar_notes: dict[int, list[Note]] = {idx: [] for idx in range(1, len(downbeat_times) + 1)}
+        bar_notes: dict[int, list[Note]] = {
+            idx: [] for idx in range(1, len(downbeat_times) + 1)
+        }
 
         for hit in hits:
-            bar_idx = _find_bar(hit.time, downbeat_times, bar_seconds)
+            bar_idx: int | None = _find_bar(hit.time, downbeat_times, bar_seconds)
             if bar_idx is None:
                 continue  # hit falls outside the detected bar grid; drop
-            bar_start = downbeat_times[bar_idx - 1]
-            offset_seconds = hit.time - bar_start
-            position = Fraction(offset_seconds / whole_note_seconds).limit_denominator(16)
+            bar_start: float = downbeat_times[bar_idx - 1]
+            offset_seconds: float = hit.time - bar_start
+            position: Fraction = Fraction(offset_seconds / whole_note_seconds).limit_denominator(16)
+            instrument: SchemaDrumClass = _to_schema_class(hit.drum_class)
             bar_notes[bar_idx].append(
                 Note(
-                    instrument=_INSTRUMENT_MAP.get(hit.drum_class, hit.drum_class),
+                    instrument=instrument,
                     position=_format_fraction(position),
                     duration="1/8",
                     confidence=hit.confidence,

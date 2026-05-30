@@ -21,5 +21,20 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.409",
     "pytest>=9.0.3",
 ]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+# typer's Argument/Option return Any internally; trying to type them strictly
+# is more noise than signal. Same for some jsonschema/numpy edges. Re-evaluate
+# if Any starts leaking into our own code surfaces.
+reportUnknownMemberType = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"

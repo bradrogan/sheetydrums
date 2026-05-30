@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from numpy.typing import NDArray
 
 
 @dataclass(frozen=True)
@@ -20,7 +21,7 @@ class AudioBuffer:
 
     `samples` is shape (n,) for mono, (n, channels) for multi-channel.
     """
-    samples: np.ndarray
+    samples: NDArray[np.floating]
     sample_rate: int
 
     @property
@@ -40,5 +41,5 @@ def load_audio(path: Path, target_sample_rate: int = 44100) -> AudioBuffer:
     target sample rate and decode the actual file.
     """
     _ = path  # accepted for interface parity; not yet read
-    samples = np.zeros(4 * target_sample_rate, dtype=np.float32)
+    samples: NDArray[np.floating] = np.zeros(4 * target_sample_rate, dtype=np.float32)
     return AudioBuffer(samples=samples, sample_rate=target_sample_rate)

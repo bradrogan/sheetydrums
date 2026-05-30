@@ -12,7 +12,7 @@ from sheetydrums.interfaces import DrumSubStems
 
 
 class StubLarsNetSeparator:
-    name = "larsnet-stub"
+    name: str = "larsnet-stub"
 
     def separate(self, drums: AudioBuffer) -> DrumSubStems:
         return DrumSubStems(

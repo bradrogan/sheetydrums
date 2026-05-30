@@ -8,18 +8,19 @@ model installed.
 from __future__ import annotations
 
 from sheetydrums.audio import AudioBuffer
-from sheetydrums.interfaces import DrumHit
+from sheetydrums.interfaces import DrumHit, TranscriberDrumClass
 
 
 class StubADTOFTranscriber:
-    name = "adtof-stub"
-    vocabulary: tuple[str, ...] = ("kick", "snare", "hihat", "tom", "cymbal")
+    name: str = "adtof-stub"
+    vocabulary: tuple[TranscriberDrumClass, ...] = ("kick", "snare", "hihat", "tom", "cymbal")
 
     def transcribe(self, drums: AudioBuffer) -> tuple[DrumHit, ...]:
+        _ = drums
         hits: list[DrumHit] = []
         # 2 bars of 4/4 at 120 BPM = 4 seconds. Beat = 0.5s. Eighth = 0.25s.
         for bar in range(2):
-            bar_start = bar * 2.0
+            bar_start: float = bar * 2.0
             # Kick on beats 1 and 3
             hits.append(DrumHit(bar_start + 0.0, "kick", 0.96))
             hits.append(DrumHit(bar_start + 1.0, "kick", 0.95))

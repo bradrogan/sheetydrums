@@ -4,17 +4,15 @@ These tests inject fakes — no real Demucs / ADTOF / Beat This! / LarsNet
 installation is required. They pin the orchestration contract:
 
 - with `substem_separator=None`, the output keeps the transcriber's coarse
-  vocabulary (5-class)
+  vocabulary (5-class), which the quantizer collapses to schema-valid defaults
 - with a sub-stem separator + expander, hihat/cymbal classes are refined
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
-
 from sheetydrums.audio import AudioBuffer
-from sheetydrums.interfaces import BeatGrid, DrumHit, DrumSubStems
+from sheetydrums.interfaces import BeatGrid, DrumHit, DrumSubStems, TranscriberDrumClass
 from sheetydrums.pipeline import Pipeline
 from sheetydrums.stages import (
     PassThroughExpander,
@@ -24,35 +22,37 @@ from sheetydrums.stages import (
 
 
 class _FakeSeparator:
-    name = "fake-separator"
+    name: str = "fake-separator"
 
     def separate(self, mix: AudioBuffer) -> AudioBuffer:
         return mix
 
 
 class _FakeTranscriber:
-    name = "fake-transcriber"
-    vocabulary = ("kick", "snare", "hihat", "tom", "cymbal")
+    name: str = "fake-transcriber"
+    vocabulary: tuple[TranscriberDrumClass, ...] = ("kick", "snare", "hihat", "tom", "cymbal")
 
     def __init__(self, hits: tuple[DrumHit, ...]) -> None:
-        self._hits = hits
+        self._hits: tuple[DrumHit, ...] = hits
 
     def transcribe(self, drums: AudioBuffer) -> tuple[DrumHit, ...]:
+        _ = drums
         return self._hits
 
 
 class _FakeBeatTracker:
-    name = "fake-beats"
+    name: str = "fake-beats"
 
     def __init__(self, grid: BeatGrid) -> None:
-        self._grid = grid
+        self._grid: BeatGrid = grid
 
     def track(self, mix: AudioBuffer) -> BeatGrid:
+        _ = mix
         return self._grid
 
 
 class _FakeSubStemSeparator:
-    name = "fake-substem"
+    name: str = "fake-substem"
 
     def separate(self, drums: AudioBuffer) -> DrumSubStems:
         return DrumSubStems(
@@ -71,19 +71,19 @@ def _make_grid() -> BeatGrid:
 
 def _dummy_audio(tmp_path: Path) -> Path:
     """Create a placeholder file for the CLI's existence check (contents ignored)."""
-    p = tmp_path / "dummy.mp3"
+    p: Path = tmp_path / "dummy.mp3"
     p.write_bytes(b"")
     return p
 
 
-def test_pipeline_without_substems_keeps_5_class_vocab(tmp_path):
-    hits = (
+def test_pipeline_without_substems_keeps_5_class_vocab(tmp_path: Path) -> None:
+    hits: tuple[DrumHit, ...] = (
         DrumHit(0.0, "kick", 0.9),
         DrumHit(0.5, "snare", 0.85),
         DrumHit(0.25, "hihat", 0.8),
         DrumHit(0.75, "cymbal", 0.7),
     )
-    pipeline = Pipeline(
+    pipeline: Pipeline = Pipeline(
         separator=_FakeSeparator(),
         transcriber=_FakeTranscriber(hits),
         beat_tracker=_FakeBeatTracker(_make_grid()),
@@ -95,7 +95,7 @@ def test_pipeline_without_substems_keeps_5_class_vocab(tmp_path):
 
     result = pipeline.transcribe(_dummy_audio(tmp_path))
 
-    instruments = {note.instrument for bar in result.bars for note in bar.notes}
+    instruments: set[str] = {note.instrument for bar in result.bars for note in bar.notes}
     # Without expansion, the quantizer collapses coarse classes to schema-valid
     # defaults: hihat → hihat_closed, cymbal → ride. The *open* and *crash*
     # refinements only appear when the SubStemExpander runs.
@@ -108,14 +108,14 @@ def test_pipeline_without_substems_keeps_5_class_vocab(tmp_path):
     assert "cymbal" not in instruments
 
 
-def test_pipeline_with_substems_refines_to_7_class_vocab(tmp_path):
-    hits = (
+def test_pipeline_with_substems_refines_to_7_class_vocab(tmp_path: Path) -> None:
+    hits: tuple[DrumHit, ...] = (
         DrumHit(0.0, "kick", 0.9),
         DrumHit(0.25, "hihat", 0.8),
         DrumHit(0.375, "hihat", 0.8),  # 16th-note offset so it lands in a different position
         DrumHit(0.75, "cymbal", 0.7),
     )
-    pipeline = Pipeline(
+    pipeline: Pipeline = Pipeline(
         separator=_FakeSeparator(),
         transcriber=_FakeTranscriber(hits),
         beat_tracker=_FakeBeatTracker(_make_grid()),
@@ -127,7 +127,7 @@ def test_pipeline_with_substems_refines_to_7_class_vocab(tmp_path):
 
     result = pipeline.transcribe(_dummy_audio(tmp_path))
 
-    instruments = {note.instrument for bar in result.bars for note in bar.notes}
+    instruments: set[str] = {note.instrument for bar in result.bars for note in bar.notes}
     # The stub expander alternates: first hihat → closed, second hihat → open
     assert "hihat_closed" in instruments
     assert "hihat_open" in instruments
