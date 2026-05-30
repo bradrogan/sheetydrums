@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -73,8 +74,8 @@ def serialize_to_schema(result: TranscriptionResult) -> dict[str, Any]:
         "duration_seconds": result.duration_seconds,
         "tempo_bpm": result.tempo_bpm,
         "time_signature": {
-            "numerator": result.time_signature[0],
-            "denominator": result.time_signature[1],
+            "numerator": result.time_signature.numerator,
+            "denominator": result.time_signature.denominator,
         },
         "bars": [
             {
@@ -98,7 +99,7 @@ def _note_to_dict(note: Note) -> dict[str, Any]:
     if note.sustain_until is not None:
         d["sustain_until"] = note.sustain_until
     if note.tuplet is not None:
-        d["tuplet"] = note.tuplet
+        d["tuplet"] = asdict(note.tuplet)
     return d
 
 

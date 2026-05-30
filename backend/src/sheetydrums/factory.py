@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from sheetydrums.config import CLIConfig
 from sheetydrums.debug import DebugSink
-from sheetydrums.interfaces import ClassExpander, DrumSubStemSeparator
+from sheetydrums.interfaces import SubStemBranch
 from sheetydrums.pipeline import Pipeline
 from sheetydrums.stages import (
-    PassThroughExpander,
     StubADTOFTranscriber,
     StubBeatThisTracker,
     StubDemucsSeparator,
@@ -23,20 +22,19 @@ from sheetydrums.stages import (
 
 def build_pipeline(config: CLIConfig) -> Pipeline:
     """Construct a Pipeline wired with the implementations chosen by `config`."""
-    substem_separator: DrumSubStemSeparator | None = (
-        StubLarsNetSeparator() if config.use_larsnet else None
-    )
-    class_expander: ClassExpander = (
-        StubSubStemExpander() if config.use_larsnet else PassThroughExpander()
-    )
+    substem_branch: SubStemBranch | None = None
+    if config.use_larsnet:
+        substem_branch = SubStemBranch(
+            separator=StubLarsNetSeparator(),
+            expander=StubSubStemExpander(),
+        )
 
     return Pipeline(
         separator=StubDemucsSeparator(),
         transcriber=StubADTOFTranscriber(),
         beat_tracker=StubBeatThisTracker(),
         quantizer=StubQuantizer(),
-        class_expander=class_expander,
-        substem_separator=substem_separator,
+        substem_branch=substem_branch,
         debug_sink=DebugSink(config.debug_dir),
         verbose=config.verbose,
     )

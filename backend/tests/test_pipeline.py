@@ -3,22 +3,26 @@
 These tests inject fakes — no real Demucs / ADTOF / Beat This! / LarsNet
 installation is required. They pin the orchestration contract:
 
-- with `substem_separator=None`, the output keeps the transcriber's coarse
-  vocabulary (5-class), which the quantizer collapses to schema-valid defaults
-- with a sub-stem separator + expander, hihat/cymbal classes are refined
+- with `substem_branch=None`, the expander stage is skipped and the
+  quantizer collapses coarse classes to schema-valid defaults
+- with a `SubStemBranch`, the expander runs and refines hihat/cymbal classes
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from sheetydrums.audio import AudioBuffer
-from sheetydrums.interfaces import Beat, BeatGrid, DrumHit, DrumSubStems, TranscriberDrumClass
-from sheetydrums.pipeline import Pipeline
-from sheetydrums.stages import (
-    PassThroughExpander,
-    StubQuantizer,
-    StubSubStemExpander,
+from sheetydrums.interfaces import (
+    Beat,
+    BeatGrid,
+    DrumHit,
+    DrumSubStems,
+    SubStemBranch,
+    TimeSignature,
+    TranscriberDrumClass,
 )
+from sheetydrums.pipeline import Pipeline
+from sheetydrums.stages import StubQuantizer, StubSubStemExpander
 
 
 class _FakeSeparator:
@@ -69,7 +73,7 @@ def _make_grid() -> BeatGrid:
             Beat(time=1.5, is_downbeat=False),
         ),
         tempo_bpm=120.0,
-        time_signature=(4, 4),
+        time_signature=TimeSignature(numerator=4, denominator=4),
     )
 
 
@@ -80,7 +84,7 @@ def _dummy_audio(tmp_path: Path) -> Path:
     return p
 
 
-def test_pipeline_without_substems_keeps_5_class_vocab(tmp_path: Path) -> None:
+def test_pipeline_without_substem_branch_keeps_5_class_vocab(tmp_path: Path) -> None:
     hits: tuple[DrumHit, ...] = (
         DrumHit(0.0, "kick", 0.9),
         DrumHit(0.5, "snare", 0.85),
@@ -92,8 +96,7 @@ def test_pipeline_without_substems_keeps_5_class_vocab(tmp_path: Path) -> None:
         transcriber=_FakeTranscriber(hits),
         beat_tracker=_FakeBeatTracker(_make_grid()),
         quantizer=StubQuantizer(),
-        class_expander=PassThroughExpander(),
-        substem_separator=None,
+        substem_branch=None,
         verbose=False,
     )
 
@@ -112,7 +115,7 @@ def test_pipeline_without_substems_keeps_5_class_vocab(tmp_path: Path) -> None:
     assert "cymbal" not in instruments
 
 
-def test_pipeline_with_substems_refines_to_7_class_vocab(tmp_path: Path) -> None:
+def test_pipeline_with_substem_branch_refines_to_7_class_vocab(tmp_path: Path) -> None:
     hits: tuple[DrumHit, ...] = (
         DrumHit(0.0, "kick", 0.9),
         DrumHit(0.25, "hihat", 0.8),
@@ -124,8 +127,10 @@ def test_pipeline_with_substems_refines_to_7_class_vocab(tmp_path: Path) -> None
         transcriber=_FakeTranscriber(hits),
         beat_tracker=_FakeBeatTracker(_make_grid()),
         quantizer=StubQuantizer(),
-        class_expander=StubSubStemExpander(),
-        substem_separator=_FakeSubStemSeparator(),
+        substem_branch=SubStemBranch(
+            separator=_FakeSubStemSeparator(),
+            expander=StubSubStemExpander(),
+        ),
         verbose=False,
     )
 

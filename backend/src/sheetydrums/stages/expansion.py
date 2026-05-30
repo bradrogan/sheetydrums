@@ -1,14 +1,8 @@
 """Class expansion: refine 5-class drum hits into the 7-class v1 vocabulary.
 
-Two implementations are provided up front because the choice between them is
-a deployment-time decision (whether LarsNet sub-stems are available):
-
-- `PassThroughExpander` — used when sub-stems are unavailable. Returns hits
-  unchanged so downstream stages see the transcriber's native 5-class output.
-- `StubSubStemExpander` — placeholder for the real envelope-feature expander.
-  Maps hihat → {closed, open} and cymbal → {ride, crash} on a deterministic
-  alternating schedule (so A/B comparisons differ visibly from the
-  pass-through case). Tom hits collapse to `tom_mid` per the v1 vocab decision.
+The Pipeline only invokes a ClassExpander when a `SubStemBranch` is configured
+— so `substems` is always a real `DrumSubStems`, never None. Implementations
+don't need to handle a missing-substems case.
 
 The real `SubStemExpander` (task #9) will replace the alternating schedule
 with decay-envelope analysis on the LarsNet sub-stems but keep the same
@@ -17,18 +11,6 @@ interface signature.
 from __future__ import annotations
 
 from sheetydrums.interfaces import DrumHit, DrumSubStems, SchemaDrumClass
-
-
-class PassThroughExpander:
-    name: str = "passthrough"
-
-    def expand(
-        self,
-        hits: tuple[DrumHit, ...],
-        substems: DrumSubStems | None,
-    ) -> tuple[DrumHit, ...]:
-        _ = substems
-        return hits
 
 
 class StubSubStemExpander:
@@ -45,10 +27,9 @@ class StubSubStemExpander:
     def expand(
         self,
         hits: tuple[DrumHit, ...],
-        substems: DrumSubStems | None,
+        substems: DrumSubStems,
     ) -> tuple[DrumHit, ...]:
-        if substems is None:
-            return hits
+        _ = substems  # real impl will use these; stub alternates deterministically
         out: list[DrumHit] = []
         hihat_n: int = 0
         cymbal_n: int = 0

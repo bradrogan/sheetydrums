@@ -9,7 +9,7 @@ module imports none of them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol, TypedDict, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from sheetydrums.audio import AudioBuffer
 
@@ -38,14 +38,28 @@ DrumClass = TranscriberDrumClass | SchemaDrumClass
 Duration = Literal["1", "1/2", "1/4", "1/8", "1/16", "1/32"]
 
 
-class Tuplet(TypedDict):
-    """Shape of the `tuplet` field on a Note in the emitted schema."""
+# === Data types flowing between stages ===
+
+@dataclass(frozen=True)
+class TimeSignature:
+    """Time signature with named numerator and denominator (e.g. 4/4)."""
+    numerator: int
+    denominator: int
+
+
+@dataclass(frozen=True)
+class Tuplet:
+    """Shape of the `tuplet` field on a Note.
+
+    `actual` notes are played in the time of `normal` notes (e.g. 3/2 for an
+    eighth-note triplet). `group` is an identifier shared by all notes in
+    the same visual bracket; the renderer uses it to draw a single bracket
+    across cross-instrument tuplets.
+    """
     actual: int
     normal: int
     group: str
 
-
-# === Data types flowing between stages ===
 
 @dataclass(frozen=True)
 class DrumHit:
@@ -67,7 +81,7 @@ class BeatGrid:
     """Output of the beat-tracking stage."""
     beats: tuple[Beat, ...]
     tempo_bpm: float
-    time_signature: tuple[int, int]
+    time_signature: TimeSignature
 
 
 @dataclass(frozen=True)
@@ -105,7 +119,7 @@ class TranscriptionResult:
     audio_file: str
     duration_seconds: float
     tempo_bpm: float
-    time_signature: tuple[int, int]
+    time_signature: TimeSignature
     bars: tuple[Bar, ...]
 
 
@@ -138,13 +152,17 @@ class DrumSubStemSeparator(Protocol):
 
 @runtime_checkable
 class ClassExpander(Protocol):
-    """Refines coarse drum-class labels using sub-stem features."""
+    """Refines coarse drum-class labels using sub-stem audio features.
+
+    Always called with valid sub-stems — the Pipeline skips this stage entirely
+    when no sub-stem separator is configured (see `SubStemBranch`).
+    """
     name: str
 
     def expand(
         self,
         hits: tuple[DrumHit, ...],
-        substems: DrumSubStems | None,
+        substems: DrumSubStems,
     ) -> tuple[DrumHit, ...]: ...
 
 
@@ -166,3 +184,18 @@ class Quantizer(Protocol):
         hits: tuple[DrumHit, ...],
         grid: BeatGrid,
     ) -> tuple[Bar, ...]: ...
+
+
+# === Optional pipeline branches ===
+
+@dataclass(frozen=True)
+class SubStemBranch:
+    """The optional sub-stem branch: separator + class expander, atomically.
+
+    These two stages are always run together — sub-stem features are useless
+    without an expander to consume them, and the expander has nothing to do
+    without sub-stems. Bundling them keeps the Pipeline's optional surface
+    to a single field instead of two mutually-dependent ones.
+    """
+    separator: DrumSubStemSeparator
+    expander: ClassExpander

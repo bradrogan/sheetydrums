@@ -7,7 +7,7 @@ the input audio's duration.
 from __future__ import annotations
 
 from sheetydrums.audio import AudioBuffer
-from sheetydrums.interfaces import Beat, BeatGrid
+from sheetydrums.interfaces import Beat, BeatGrid, TimeSignature
 
 
 class StubBeatThisTracker:
@@ -24,5 +24,5 @@ class StubBeatThisTracker:
         return BeatGrid(
             beats=beats,
             tempo_bpm=tempo_bpm,
-            time_signature=(4, 4),
+            time_signature=TimeSignature(numerator=4, denominator=4),
         )

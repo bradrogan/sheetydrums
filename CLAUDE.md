@@ -61,7 +61,7 @@ backend/src/sheetydrums/
 │   ├── separation.py    real impl (Demucs/ADTOF/...) lands when its task ticket
 │   ├── transcription.py is worked, replacing the stub at the factory layer.
 │   ├── substem.py
-│   ├── expansion.py     (PassThroughExpander + StubSubStemExpander)
+│   ├── expansion.py     StubSubStemExpander (only invoked when substem branch is on)
 │   ├── beats.py
 │   └── quantize.py      StubQuantizer + the v1 vocabulary-collapse map
 └── validate.py        jsonschema validation + cross-field sustain_until check

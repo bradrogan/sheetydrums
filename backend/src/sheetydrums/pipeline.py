@@ -2,8 +2,8 @@
 
 Imports nothing from any audio/ML library. Stage implementations are injected
 via the constructor — concrete model wrappers in `stages/` for production,
-fakes in tests. To skip the LarsNet sub-stem branch, pass
-`substem_separator=None` and a `PassThroughExpander` as `class_expander`.
+fakes in tests. To skip the sub-stem branch (LarsNet + class expander),
+pass `substem_branch=None`.
 """
 from __future__ import annotations
 
@@ -16,14 +16,12 @@ from sheetydrums.interfaces import (
     Bar,
     BeatGrid,
     BeatTracker,
-    ClassExpander,
     DrumClass,
     DrumHit,
-    DrumSubStemSeparator,
-    DrumSubStems,
     DrumTranscriber,
     MixSeparator,
     Quantizer,
+    SubStemBranch,
     TranscriptionResult,
 )
 
@@ -38,8 +36,7 @@ class Pipeline:
         transcriber: DrumTranscriber,
         beat_tracker: BeatTracker,
         quantizer: Quantizer,
-        class_expander: ClassExpander,
-        substem_separator: DrumSubStemSeparator | None = None,
+        substem_branch: SubStemBranch | None = None,
         debug_sink: DebugSink | None = None,
         verbose: bool = True,
     ) -> None:
@@ -47,8 +44,7 @@ class Pipeline:
         self._transcriber: DrumTranscriber = transcriber
         self._beat_tracker: BeatTracker = beat_tracker
         self._quantizer: Quantizer = quantizer
-        self._class_expander: ClassExpander = class_expander
-        self._substem_separator: DrumSubStemSeparator | None = substem_separator
+        self._substem_branch: SubStemBranch | None = substem_branch
         self._debug: DebugSink = debug_sink if debug_sink is not None else DebugSink(None)
         self._verbose: bool = verbose
 
@@ -71,36 +67,36 @@ class Pipeline:
             [{"time": h.time, "class": h.drum_class, "confidence": h.confidence} for h in hits],
         )
 
-        substems: DrumSubStems | None = None
-        if self._substem_separator is not None:
-            substems = self._substem_separator.separate(drums)
-            self._log(f"[substem:{self._substem_separator.name}] 5 sub-stems extracted")
+        if self._substem_branch is not None:
+            substems = self._substem_branch.separator.separate(drums)
+            self._log(f"[substem:{self._substem_branch.separator.name}] 5 sub-stems extracted")
             self._debug.write_text(
-                f"substem-{self._substem_separator.name}",
+                f"substem-{self._substem_branch.separator.name}",
                 "kick + snare + hihat + toms + cymbals sub-stems extracted",
             )
 
-        hits = self._class_expander.expand(hits, substems)
-        expanded_vocab: list[DrumClass] = sorted({h.drum_class for h in hits})
-        self._log(
-            f"[expander:{self._class_expander.name}] {len(hits)} hits, "
-            f"vocab={tuple(expanded_vocab)}"
-        )
-        self._debug.write_json(
-            f"expander-{self._class_expander.name}",
-            [{"time": h.time, "class": h.drum_class, "confidence": h.confidence} for h in hits],
-        )
+            hits = self._substem_branch.expander.expand(hits, substems)
+            expanded_vocab: list[DrumClass] = sorted({h.drum_class for h in hits})
+            self._log(
+                f"[expander:{self._substem_branch.expander.name}] {len(hits)} hits, "
+                f"vocab={tuple(expanded_vocab)}"
+            )
+            self._debug.write_json(
+                f"expander-{self._substem_branch.expander.name}",
+                [{"time": h.time, "class": h.drum_class, "confidence": h.confidence} for h in hits],
+            )
 
         grid: BeatGrid = self._beat_tracker.track(mix)
         self._log(
             f"[beats:{self._beat_tracker.name}] {grid.tempo_bpm:.1f} BPM, "
-            f"{grid.time_signature[0]}/{grid.time_signature[1]}, {len(grid.beats)} beats"
+            f"{grid.time_signature.numerator}/{grid.time_signature.denominator}, "
+            f"{len(grid.beats)} beats"
         )
         self._debug.write_json(
             f"beats-{self._beat_tracker.name}",
             {
                 "tempo_bpm": grid.tempo_bpm,
-                "time_signature": list(grid.time_signature),
+                "time_signature": [grid.time_signature.numerator, grid.time_signature.denominator],
                 "beats": [{"time": b.time, "downbeat": b.is_downbeat} for b in grid.beats],
             },
         )
