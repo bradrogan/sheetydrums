@@ -45,3 +45,6 @@ reportUnknownVariableType = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers"
+markers = [
+    "slow: integration tests that load real models / fixtures (run with --run-slow)",
+]

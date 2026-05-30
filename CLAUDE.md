@@ -76,7 +76,12 @@ CLI:
 - `--debug-dir DIR` — dump each stage's intermediate to `DIR/NN-stage.{json,txt}`
 - `--quiet` / `-q` — suppress per-stage stat lines
 
-Run with `cd backend && uv run sheetydrums --help`; test with `cd backend && uv run pytest`.
+Run with `cd backend && uv run sheetydrums --help`. Test:
+
+- `uv run pytest` — fast unit tests (DI orchestration with fakes; ~0.2s)
+- `uv run pytest --run-slow` — adds the end-to-end smoke test that runs the
+  real pipeline against `backend/tests/fixtures/eric-keyes-lost.ogg` with both
+  `--larsnet` and `--no-larsnet`. ~40s total once Demucs weights are cached.
 
 **Vocabulary collapse rule** (in `stages/quantize.py`'s `_INSTRUMENT_MAP`): coarse labels from the 5-class transcriber that don't make it through expansion collapse to schema-valid defaults at the emit boundary: `hihat → hihat_closed`, `cymbal → ride`, `tom → tom_mid`. This makes the output always schema-valid, with `--no-larsnet` simply producing a less-refined (but valid) transcription.
 
