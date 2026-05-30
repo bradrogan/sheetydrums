@@ -89,8 +89,9 @@ Run with `cd backend && uv run sheetydrums --help`. Test:
 
 ## Status
 
-Walking skeleton works end to end with real Demucs. Pipeline currently:
-- **Demucs htdemucs_ft** — REAL (task #4 done). MPS-accelerated on Apple Silicon. First run downloads ~320 MB of weights to `~/.cache/torch/hub/`; subsequent runs are ~9 s for a 4-second clip.
-- ADTOF, LarsNet, sub-stem expander, Beat This!, quantizer — still stubs producing deterministic output.
+Walking skeleton works end to end with real Demucs + real ADTOF. Pipeline currently:
+- **Demucs htdemucs_ft** — REAL (task #4). MPS on Apple Silicon. First run downloads ~320 MB of weights to `~/.cache/torch/hub/`.
+- **ADTOF Frame-RNN (pytorch port)** — REAL (task #7). Weights ship inside the `adtof-pytorch` package (~5 MB), no network on first run. 5-class output: kick / snare / tom / hihat / cymbal. CC-BY-NC-SA weights.
+- LarsNet sub-stem separator, sub-stem expander, Beat This!, quantizer — still stubs.
 
-Next stage to swap is ADTOF (task #7) — its drum-stem input is now real.
+Next stage to swap is Beat This! (task #10). It's the natural next one since the drum-grid output is currently nonsensical: onsets from ADTOF are real, but they're being quantized against a hardcoded 120 BPM grid from `StubBeatThisTracker`.
