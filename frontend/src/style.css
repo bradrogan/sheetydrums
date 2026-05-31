@@ -34,7 +34,18 @@ header h1 {
   margin-bottom: 0.75rem;
 }
 
-#vf-stave {
+.bar-row {
+  margin-bottom: 0.5rem;
+}
+
+.bar-label {
+  font-size: 0.75rem;
+  color: #888;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  margin-bottom: 0.1rem;
+}
+
+.bar-svg {
   width: 100%;
   overflow: auto;
 }
