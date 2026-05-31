@@ -96,4 +96,4 @@ Walking skeleton works end to end with real Demucs + real ADTOF + real Beat This
 - LarsNet sub-stem separator, sub-stem expander, quantizer — still stubs.
 - **5→7 class expansion (open/closed hi-hat, ride/crash) is deferred to v2** — see `docs/v2-backlog.md`. The drum sub-stem separator space (LarsNet, jarredou's DrumSep) has packaging + license blockers today; revisit when a permissively-licensed alternative ships. The pipeline behaves as if `--no-larsnet` is always set: the quantizer's collapse map (`hihat → hihat_closed`, `cymbal → ride`, `tom → tom_mid`) keeps output schema-valid at 5 effective classes.
 
-Only remaining v1 work is task #11 — quantizer polish (replace `Fraction.limit_denominator(16)` with explicit 16th/32nd snapping so position fractions stop coming out as `1/10` or `3/13`).
+**All v1 build tasks complete.** Pipeline produces real Demucs separation, real ADTOF transcription, real Beat This! beat grid, and clean 16th-note quantized positions (never `1/10` or `3/13` — strict snapping). v2 work tracked in `docs/v2-backlog.md`.
