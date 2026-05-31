@@ -1,0 +1,78 @@
+{
+  "version": "1",
+  "audio_file": "basic-rock.drums.mp3",
+  "duration_seconds": 8.0,
+  "tempo_bpm": 120,
+  "time_signature": { "numerator": 4, "denominator": 4 },
+  "bars": [
+    {
+      "index": 1,
+      "start_seconds": 0.0,
+      "notes": [
+        { "instrument": "kick",         "position": "0",   "duration": "1/4", "confidence": 0.97 },
+        { "instrument": "hihat_closed", "position": "0",   "duration": "1/8", "confidence": 0.91 },
+        { "instrument": "hihat_closed", "position": "1/8", "duration": "1/8", "confidence": 0.89 },
+        { "instrument": "snare",        "position": "1/4", "duration": "1/4", "confidence": 0.95 },
+        { "instrument": "hihat_closed", "position": "1/4", "duration": "1/8", "confidence": 0.88 },
+        { "instrument": "hihat_closed", "position": "3/8", "duration": "1/8", "confidence": 0.86 },
+        { "instrument": "kick",         "position": "1/2", "duration": "1/4", "confidence": 0.96 },
+        { "instrument": "hihat_closed", "position": "1/2", "duration": "1/8", "confidence": 0.90 },
+        { "instrument": "hihat_closed", "position": "5/8", "duration": "1/8", "confidence": 0.87 },
+        { "instrument": "snare",        "position": "3/4", "duration": "1/4", "confidence": 0.94 },
+        { "instrument": "hihat_closed", "position": "3/4", "duration": "1/8", "confidence": 0.89 },
+        { "instrument": "hihat_closed", "position": "7/8", "duration": "1/8", "confidence": 0.85 }
+      ]
+    },
+    {
+      "index": 2,
+      "start_seconds": 2.0,
+      "notes": [
+        { "instrument": "kick",         "position": "0",   "duration": "1/4", "confidence": 0.96 },
+        { "instrument": "crash",        "position": "0",   "duration": "1",   "confidence": 0.92 },
+        { "instrument": "hihat_closed", "position": "1/8", "duration": "1/8", "confidence": 0.84 },
+        { "instrument": "snare",        "position": "1/4", "duration": "1/4", "confidence": 0.95 },
+        { "instrument": "hihat_closed", "position": "1/4", "duration": "1/8", "confidence": 0.83 },
+        { "instrument": "hihat_closed", "position": "3/8", "duration": "1/8", "confidence": 0.82 },
+        { "instrument": "kick",         "position": "1/2", "duration": "1/4", "confidence": 0.95 },
+        { "instrument": "hihat_closed", "position": "1/2", "duration": "1/8", "confidence": 0.88 },
+        { "instrument": "hihat_closed", "position": "5/8", "duration": "1/8", "confidence": 0.81 },
+        { "instrument": "snare",        "position": "3/4", "duration": "1/4", "confidence": 0.93 },
+        { "instrument": "hihat_open",   "position": "3/4", "duration": "1/8", "confidence": 0.76 },
+        { "instrument": "hihat_chick",  "position": "7/8", "duration": "1/8", "confidence": 0.82 }
+      ]
+    },
+    {
+      "index": 3,
+      "start_seconds": 4.0,
+      "notes": [
+        { "instrument": "kick",         "position": "0",    "duration": "1/4", "confidence": 0.96 },
+        { "instrument": "hihat_closed", "position": "0",    "duration": "1/8", "confidence": 0.90 },
+        { "instrument": "hihat_closed", "position": "1/8",  "duration": "1/8", "confidence": 0.88 },
+        { "instrument": "snare",        "position": "1/4",  "duration": "1/4", "confidence": 0.95 },
+        { "instrument": "hihat_closed", "position": "1/4",  "duration": "1/8", "confidence": 0.87 },
+        { "instrument": "hihat_closed", "position": "3/8",  "duration": "1/8", "confidence": 0.85 },
+        { "instrument": "snare",        "position": "1/2",  "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t1" }, "confidence": 0.91 },
+        { "instrument": "tom_high",     "position": "7/12", "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t1" }, "confidence": 0.78 },
+        { "instrument": "tom_mid",      "position": "2/3",  "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t1" }, "confidence": 0.75 },
+        { "instrument": "tom_high",     "position": "3/4",  "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t2" }, "confidence": 0.79 },
+        { "instrument": "tom_mid",      "position": "5/6",  "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t2" }, "confidence": 0.77 },
+        { "instrument": "tom_low",      "position": "11/12","duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t2" }, "confidence": 0.74 }
+      ]
+    },
+    {
+      "index": 4,
+      "start_seconds": 6.0,
+      "notes": [
+        { "instrument": "kick",         "position": "0",   "duration": "1/4", "confidence": 0.96 },
+        { "instrument": "hihat_closed", "position": "0",   "duration": "1/8", "confidence": 0.89 },
+        { "instrument": "hihat_closed", "position": "1/8", "duration": "1/8", "confidence": 0.87 },
+        { "instrument": "snare",        "position": "1/4", "duration": "1/4", "confidence": 0.94 },
+        { "instrument": "hihat_open",   "position": "1/4", "duration": "1/4", "sustain_until": "3/8", "confidence": 0.72 },
+        { "instrument": "kick",         "position": "1/2", "duration": "1/4", "confidence": 0.95 },
+        { "instrument": "snare",        "position": "3/4", "duration": "1/4", "confidence": 0.93 },
+        { "instrument": "hihat_closed", "position": "3/4", "duration": "1/8", "confidence": 0.88 },
+        { "instrument": "hihat_closed", "position": "7/8", "duration": "1/8", "confidence": 0.86 }
+      ]
+    }
+  ]
+}

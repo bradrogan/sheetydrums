@@ -94,4 +94,8 @@ Walking skeleton works end to end with real Demucs + real ADTOF + real Beat This
 - **Beat This! (final0)** — REAL. First run downloads ~77 MB. Outputs beats + downbeats; the wrapper derives tempo (median 60/IBI) and time signature (most-common beats-per-bar from downbeat positions, restricted to {2,3,4} else falls back to 4/4). MIT license.
 - **5→7 class expansion (open/closed hi-hat, ride/crash) is deferred to v2** — see `docs/v2-backlog.md`. The drum sub-stem separator space (LarsNet, jarredou's DrumSep) has packaging + license blockers today. The quantizer's collapse map (`hihat → hihat_closed`, `cymbal → ride`, `tom → tom_mid`) keeps output schema-valid at 5 effective classes.
 
-**All v1 build tasks complete.** Pipeline produces real Demucs separation, real ADTOF transcription, real Beat This! beat grid, and clean 16th-note quantized positions. v2 work tracked in `docs/v2-backlog.md`.
+**v1 backend build complete.** Pipeline produces real Demucs separation, real ADTOF transcription, real Beat This! beat grid, and clean 16th-note quantized positions.
+
+**v1 frontend scaffolded** (Vite + TypeScript + VexFlow). Loads `events.json` via fetch, generates types from `schema/events.schema.json` at build time (json-schema-to-typescript), renders metadata + a placeholder VexFlow stave. Real percussion-staff rendering is the next frontend task. Setup: `cd frontend && pnpm install && pnpm run dev`.
+
+v2 work tracked in `docs/v2-backlog.md`.
