@@ -89,9 +89,10 @@ Run with `cd backend && uv run sheetydrums --help`. Test:
 
 ## Status
 
-Walking skeleton works end to end with real Demucs + real ADTOF. Pipeline currently:
+Walking skeleton works end to end with real Demucs + real ADTOF + real Beat This!. Pipeline currently:
 - **Demucs htdemucs_ft** — REAL (task #4). MPS on Apple Silicon. First run downloads ~320 MB of weights to `~/.cache/torch/hub/`.
 - **ADTOF Frame-RNN (pytorch port)** — REAL (task #7). Weights ship inside the `adtof-pytorch` package (~5 MB), no network on first run. 5-class output: kick / snare / tom / hihat / cymbal. CC-BY-NC-SA weights.
-- LarsNet sub-stem separator, sub-stem expander, Beat This!, quantizer — still stubs.
+- **Beat This! (final0)** — REAL (task #10). First run downloads ~77 MB. Outputs beats + downbeats; the wrapper derives tempo (median 60/IBI) and time signature (most-common beats-per-bar from downbeat positions). MIT license.
+- LarsNet sub-stem separator, sub-stem expander, quantizer — still stubs.
 
-Next stage to swap is Beat This! (task #10). It's the natural next one since the drum-grid output is currently nonsensical: onsets from ADTOF are real, but they're being quantized against a hardcoded 120 BPM grid from `StubBeatThisTracker`.
+Remaining stages to swap: LarsNet (task #8), sub-stem expander (task #9), beat-grid quantizer (task #11). LarsNet and the expander are paired (LarsNet's sub-stems feed the expander). The quantizer is independent — current StubQuantizer already does 16th-note snapping against the (now real) beat grid; what's left is fixing the position fractions to use musically meaningful denominators (16ths, 32nds, triplets).

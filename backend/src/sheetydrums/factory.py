@@ -12,8 +12,8 @@ from sheetydrums.interfaces import SubStemBranch
 from sheetydrums.pipeline import Pipeline
 from sheetydrums.stages import (
     ADTOFTranscriber,
+    BeatThisTracker,
     DemucsSeparator,
-    StubBeatThisTracker,
     StubLarsNetSeparator,
     StubQuantizer,
     StubSubStemExpander,
@@ -32,7 +32,7 @@ def build_pipeline(config: CLIConfig) -> Pipeline:
     return Pipeline(
         separator=DemucsSeparator(progress=config.verbose),
         transcriber=ADTOFTranscriber(),
-        beat_tracker=StubBeatThisTracker(),
+        beat_tracker=BeatThisTracker(),
         quantizer=StubQuantizer(),
         substem_branch=substem_branch,
         debug_sink=DebugSink(config.debug_dir),

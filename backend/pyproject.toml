@@ -8,6 +8,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "adtof-pytorch",
+    "beat-this>=1.1.0",
     "demucs>=4.0.1",
     "jsonschema>=4.26.0",
     "numpy>=2.4.6",
