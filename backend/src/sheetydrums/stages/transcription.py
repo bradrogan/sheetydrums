@@ -31,6 +31,7 @@ from numpy.typing import NDArray
 from scipy import signal as scipy_signal
 
 from sheetydrums.audio import AudioBuffer
+from sheetydrums.device import best_device, release_to_cpu
 from sheetydrums.interfaces import DrumHit, TranscriberDrumClass
 
 
@@ -52,7 +53,7 @@ class ADTOFTranscriber:
     vocabulary: tuple[TranscriberDrumClass, ...] = _CLASS_AT_INDEX
 
     def __init__(self, device: str | None = None) -> None:
-        self._device: str = device if device is not None else _best_device()
+        self._device: str = device if device is not None else best_device()
         self._model: Any = None  # lazy
         self._processor: Any = None
 
@@ -102,6 +103,8 @@ class ADTOFTranscriber:
                 confidence: float = float(activation[frame_idx])
                 hits.append(DrumHit(time=time_sec, drum_class=cls_name, confidence=confidence))
 
+        # Free ADTOF's GPU allocations before downstream stages run.
+        release_to_cpu(self._model)
         return tuple(sorted(hits, key=lambda h: (h.time, h.drum_class)))
 
     def _ensure_loaded(self) -> None:
@@ -121,14 +124,3 @@ class ADTOFTranscriber:
             self._processor = create_adtof_processor()
 
 
-def _best_device() -> str:
-    """Pick a PyTorch device.
-
-    ADTOF-pytorch's Frame-RNN uses only standard ops, so it runs on MPS / CUDA
-    fine despite the library's high-level API only documenting cpu/cuda.
-    """
-    if torch.backends.mps.is_available():
-        return "mps"
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"

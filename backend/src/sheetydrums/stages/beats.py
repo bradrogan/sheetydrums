@@ -14,11 +14,11 @@ from collections import Counter
 from typing import Any
 
 import numpy as np
-import torch
 from beat_this.inference import Audio2Beats
 from numpy.typing import NDArray
 
 from sheetydrums.audio import AudioBuffer
+from sheetydrums.device import best_device, release_to_cpu
 from sheetydrums.interfaces import Beat, BeatGrid, TimeSignature
 
 
@@ -44,7 +44,7 @@ class BeatThisTracker:
         device: str | None = None,
     ) -> None:
         self._checkpoint: str = checkpoint
-        self._device: str = device if device is not None else _best_device()
+        self._device: str = device if device is not None else best_device()
         self._tracker: Any = None  # lazy
 
     def track(self, mix: AudioBuffer) -> BeatGrid:
@@ -62,6 +62,10 @@ class BeatThisTracker:
         beats: tuple[Beat, ...] = _build_beats(beat_times, downbeat_times)
         tempo_bpm: float = _derive_tempo(beat_times)
         time_signature: TimeSignature = _derive_time_signature(beats)
+
+        # Free Beat This!'s GPU allocations once we're done with it.
+        if self._tracker is not None and hasattr(self._tracker, "model"):
+            release_to_cpu(getattr(self._tracker, "model", None))
 
         return BeatGrid(
             beats=beats,
@@ -127,10 +131,3 @@ def _derive_time_signature(beats: tuple[Beat, ...]) -> TimeSignature:
     return TimeSignature(numerator=4, denominator=4)
 
 
-def _best_device() -> str:
-    """Pick a PyTorch device. Beat This! is plain PyTorch so MPS works."""
-    if torch.backends.mps.is_available():
-        return "mps"
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"

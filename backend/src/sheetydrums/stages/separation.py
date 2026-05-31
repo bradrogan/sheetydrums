@@ -19,6 +19,7 @@ from demucs.pretrained import get_model
 from numpy.typing import NDArray
 
 from sheetydrums.audio import AudioBuffer
+from sheetydrums.device import best_device, release_to_cpu
 
 
 _MODEL_NAME = "htdemucs_ft"
@@ -30,7 +31,7 @@ class DemucsSeparator:
     name: str = f"demucs-{_MODEL_NAME}"
 
     def __init__(self, device: str | None = None, progress: bool = False) -> None:
-        self._device: str = device if device is not None else _best_device()
+        self._device: str = device if device is not None else best_device()
         self._progress: bool = progress
         self._model: Any = None  # lazy
 
@@ -51,7 +52,12 @@ class DemucsSeparator:
         drums_idx: int = model.sources.index(_DRUMS_LABEL)
         drums_tensor: torch.Tensor = sources[0, drums_idx]  # (channels, samples)
         drums_samples: NDArray[np.floating] = drums_tensor.cpu().numpy().T  # (samples, channels)
-        return AudioBuffer(samples=drums_samples, sample_rate=mix.sample_rate)
+        result = AudioBuffer(samples=drums_samples, sample_rate=mix.sample_rate)
+
+        # Free Demucs's GPU allocations so downstream stages have room to run.
+        # See sheetydrums/device.py for why empty_cache() alone is insufficient.
+        release_to_cpu(self._model)
+        return result
 
     def _ensure_model(self) -> Any:
         if self._model is None:
@@ -76,10 +82,3 @@ def _audio_to_demucs_tensor(audio: AudioBuffer) -> torch.Tensor:
     return torch.as_tensor(channels_first).unsqueeze(0)  # pyright: ignore[reportPrivateImportUsage]
 
 
-def _best_device() -> str:
-    """Pick the best available PyTorch device: MPS on Apple Silicon, CUDA on Nvidia, else CPU."""
-    if torch.backends.mps.is_available():
-        return "mps"
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"
