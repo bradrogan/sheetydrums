@@ -4,8 +4,9 @@ Items explicitly out of scope for v1 that we want to revisit when the v1 pipelin
 
 ## Drum vocabulary
 
-- **`hihat_chick` detection** — foot-pedal close with no stick hit. Schema supports it; v1 transcriber doesn't emit it. Approaches: heuristic over LarsNet hi-hat sub-stem (low stick-spectrum energy when hat closes after open), or fine-tune a classifier on STAR Drums' 18-class corpus.
-- **Tom pitch distinction (`tom_high` / `tom_mid` / `tom_low`)** — v1 emits every tom hit as `tom_mid`. Approaches: spectral-centroid features from LarsNet's tom sub-stem (cheap, fragile), or fine-tune on STAR Drums' multi-tom labels.
+- **5 → 7 class expansion (open/closed hi-hat + ride/crash split)** — deferred from v1 (was tasks #8 + #9). v1 collapses to schema-valid defaults at the quantizer (`hihat → hihat_closed`, `cymbal → ride`). The Cheuk et al. 2024 recipe requires a drum sub-stem separator (LarsNet or jarredou's DrumSep MDX23C); neither is a pip-installable library today — both require vendoring code + downloading hundreds of MB of weights + accepting license uncertainty (LarsNet's code has no LICENSE file; weights are CC-BY-NC). Re-evaluate when either (a) one of the existing models gains proper packaging, (b) a permissively-licensed alternative ships (Inverse Drum Machine on full mixes is the project to watch), or (c) we decide the v1 5-class fidelity is genuinely insufficient for users.
+- **`hihat_chick` detection** — foot-pedal close with no stick hit. Schema supports it; v1 transcriber doesn't emit it. Approaches: heuristic over a hi-hat sub-stem (low stick-spectrum energy when hat closes after open), or fine-tune a classifier on STAR Drums' 18-class corpus.
+- **Tom pitch distinction (`tom_high` / `tom_mid` / `tom_low`)** — v1 emits every tom hit as `tom_mid`. Approaches: spectral-centroid features from a tom sub-stem (cheap, fragile), or fine-tune on STAR Drums' multi-tom labels.
 
 ## Notation richness
 
