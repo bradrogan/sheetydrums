@@ -29,12 +29,6 @@ def transcribe_command(
         "--output",
         help="Output path for events.json.",
     ),
-    no_larsnet: bool = typer.Option(
-        False,
-        "--no-larsnet",
-        help="Skip the LarsNet sub-stem separator and the 5→7 class expansion. "
-        "Output uses the ADTOF 5-class vocabulary (merged hihat, merged cymbal).",
-    ),
     debug_dir: Path | None = typer.Option(
         None,
         "--debug-dir",
@@ -49,7 +43,6 @@ def transcribe_command(
 ) -> None:
     """Transcribe an audio file's drum part to events.json."""
     config: CLIConfig = CLIConfig(
-        use_larsnet=not no_larsnet,
         debug_dir=debug_dir,
         verbose=not quiet,
     )

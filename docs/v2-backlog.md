@@ -20,6 +20,7 @@ Items explicitly out of scope for v1 that we want to revisit when the v1 pipelin
 - **Replace ADTOF + LarsNet for commercial readiness** — both have CC-BY-NC weights. For commercial use: (a) retrain a CRNN on permissively-licensed data (E-GMD, Slakh, STAR Drums), or (b) switch to Inverse Drum Machine (Apache-2.0) once full-mix benchmarks land. See `docs/research/2026-05-pipeline-survey.md` Risk 1.
 - **Genre-specific calibration** — Demucs separation artifacts vary by genre. Cheuk et al. 2024 saw +12 F1 on rock/pop but −2 on electronic kits. Calibrate confidence thresholds per genre or per-song.
 - **Tempo changes / rubato** — Beat This! handles steady tempo well; rubato is harder. Defer until we see real failures on real songs.
+- **Compound-meter detection (6/8, 12/8)** — v1's beat-tracker wrapper restricts emitted time signatures to {2,3,4} beats-per-bar at denominator=4 (the simple meters where the mapping is unambiguous). Songs that come back as 6, 8, or 12 beats per bar fall back to 4/4 because we can't distinguish 6/4 from 6/8 without a tatum-aware classifier. Approach: detect compound feel by looking at IBI vs. some reference tempo, or run a separate meter-classifier head.
 
 ## Cross-bar features
 

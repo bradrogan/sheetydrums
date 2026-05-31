@@ -13,6 +13,5 @@ class CLIConfig:
     by the orchestrator (via injected DebugSink / verbose flag) to govern
     side effects.
     """
-    use_larsnet: bool = True
     debug_dir: Path | None = None
     verbose: bool = True

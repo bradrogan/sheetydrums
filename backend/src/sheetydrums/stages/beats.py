@@ -23,11 +23,14 @@ from sheetydrums.interfaces import Beat, BeatGrid, TimeSignature
 
 
 _DEFAULT_CHECKPOINT = "final0"
-# Numerators that map to a recognised simple/compound time signature; anything
-# else falls back to 4/4 (the v1 default). 4 covers 4/4 (most rock/pop); 3
-# covers 3/4 (waltz); 6 covers 6/8 (compound duple, written with denom=4 still
-# in this stage — denominator refinement is v2 work).
-_RECOGNISED_BEATS_PER_BAR = {2, 3, 4, 6, 8, 12}
+# Numerators we'll emit with confidence at denominator=4. Restricted to the
+# simple meters where "N beats per bar, quarter note gets the beat" is
+# unambiguously right: 2/4 (march), 3/4 (waltz), 4/4 (most rock/pop). Songs
+# that come back as 6, 8, or 12 beats per bar fall back to 4/4 — without a
+# tatum-aware classifier we can't tell 6/4 from 6/8, and emitting the wrong
+# denominator would render misleading sheets. Compound-meter detection
+# (6/8, 12/8) is tracked in docs/v2-backlog.md.
+_RECOGNISED_BEATS_PER_BAR = {2, 3, 4}
 
 
 class BeatThisTracker:

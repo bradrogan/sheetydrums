@@ -18,9 +18,17 @@ class AudioBuffer:
     `samples` is shape (n,) for mono or (n, channels) for multi-channel.
     Channels are preserved end-to-end; downstream stages (e.g. ADTOF) that
     require mono should mix down at their own boundary.
+
+    True immutability: `frozen=True` blocks reassigning the field, and
+    `__post_init__` flips numpy's write flag so in-place mutation also
+    fails loudly. Stages that need to modify audio must `.copy()` first
+    (numpy operations like `.astype()` already copy by default).
     """
     samples: NDArray[np.floating]
     sample_rate: int
+
+    def __post_init__(self) -> None:
+        self.samples.setflags(write=False)
 
     @property
     def duration_seconds(self) -> float:

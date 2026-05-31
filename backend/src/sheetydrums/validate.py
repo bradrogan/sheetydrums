@@ -26,7 +26,13 @@ def validate(events: dict[str, Any]) -> None:
 
 
 def _check_sustain_until(events: dict[str, Any]) -> None:
-    """Cross-field check JSON Schema can't express: sustain_until > position. Cross-bar sustains are allowed."""
+    """Cross-field check JSON Schema can't express: sustain_until > position. Cross-bar sustains are allowed.
+
+    Pre: `events` MUST already be jsonschema-valid (call `validate()` rather
+    than this function directly). The asserts catch direct callers; the real
+    structural guarantees come from the upstream jsonschema.validate call.
+    """
+    assert "bars" in events, "_check_sustain_until called before jsonschema.validate()"
     for bar in events["bars"]:
         for note in bar["notes"]:
             if "sustain_until" not in note:

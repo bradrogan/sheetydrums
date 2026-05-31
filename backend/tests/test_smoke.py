@@ -1,14 +1,15 @@
 """End-to-end smoke test against the committed CC fixture.
 
 Loads `backend/tests/fixtures/eric-keyes-lost.ogg`, runs the full pipeline
-(real Demucs + still-stub downstream stages), serializes to the schema, and
-validates. Asserts only structural properties — note counts will change as
-downstream stages get real implementations and that's expected. We're proving
-the pipeline doesn't blow up end-to-end, not measuring transcription quality.
+(real Demucs + real ADTOF + real Beat This! + stub quantizer), serializes
+to the schema, and validates. Asserts only structural properties — note
+counts will change as v2 work lands and that's expected. We're proving the
+pipeline doesn't blow up end-to-end, not measuring transcription quality.
 
 Marked `slow` so the fast unit-test loop (`uv run pytest`) skips it. Run
-explicitly with `uv run pytest --run-slow`. First invocation downloads ~320 MB
-of Demucs weights into the torch hub cache.
+explicitly with `uv run pytest --run-slow`. First invocation downloads
+~320 MB of Demucs weights + ~77 MB of Beat This! weights into the torch
+hub cache.
 """
 from __future__ import annotations
 
@@ -28,11 +29,10 @@ _FIXTURE_PATH = Path(__file__).parent / "fixtures" / "eric-keyes-lost.ogg"
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("use_larsnet", [True, False], ids=["with-larsnet", "no-larsnet"])
-def test_pipeline_end_to_end_on_fixture(tmp_path: Path, use_larsnet: bool) -> None:
+def test_pipeline_end_to_end_on_fixture(tmp_path: Path) -> None:
     assert _FIXTURE_PATH.exists(), f"fixture missing: {_FIXTURE_PATH}"
 
-    config = CLIConfig(use_larsnet=use_larsnet, debug_dir=None, verbose=False)
+    config = CLIConfig(debug_dir=None, verbose=False)
     pipeline = build_pipeline(config)
 
     result = pipeline.transcribe(_FIXTURE_PATH)
@@ -45,8 +45,8 @@ def test_pipeline_end_to_end_on_fixture(tmp_path: Path, use_larsnet: bool) -> No
     output = tmp_path / "events.json"
     output.write_text(json.dumps(events, indent=2) + "\n")
 
-    # Structural assertions — note counts and instruments change as downstream
-    # stubs get replaced; the smoke test only pins the shape.
+    # Structural assertions — note counts and instruments change as v2 work
+    # lands; the smoke test only pins the shape.
     assert events["audio_file"] == _FIXTURE_PATH.name
     assert events["duration_seconds"] > 25, "fixture should be roughly 30s"
     assert events["tempo_bpm"] > 0

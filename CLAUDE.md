@@ -57,12 +57,10 @@ backend/src/sheetydrums/
 ├── factory.py         build_pipeline(config) — single point selecting impls
 ├── audio.py           AudioBuffer + (stub) load_audio
 ├── debug.py           DebugSink — per-stage artifact dumps when --debug-dir set
-├── stages/            One module per stage. Each has a `Stub*` class today;
-│   ├── separation.py    real impl (Demucs/ADTOF/...) lands when its task ticket
-│   ├── transcription.py is worked, replacing the stub at the factory layer.
-│   ├── substem.py
-│   ├── expansion.py     StubSubStemExpander (only invoked when substem branch is on)
-│   ├── beats.py
+├── stages/            One module per stage.
+│   ├── separation.py    DemucsSeparator (htdemucs_ft) — REAL
+│   ├── transcription.py ADTOFTranscriber (pytorch port) — REAL
+│   ├── beats.py         BeatThisTracker — REAL
 │   └── quantize.py      StubQuantizer + the v1 vocabulary-collapse map
 └── validate.py        jsonschema validation + cross-field sustain_until check
 
@@ -71,8 +69,7 @@ backend/tests/
 ```
 
 CLI:
-- `sheetydrums INPUT.mp3 -o OUT.json` — full pipeline (7-class output)
-- `--no-larsnet` — skip the sub-stem branch (5-class collapsed output)
+- `sheetydrums INPUT.mp3 -o OUT.json` — full pipeline
 - `--debug-dir DIR` — dump each stage's intermediate to `DIR/NN-stage.{json,txt}`
 - `--quiet` / `-q` — suppress per-stage stat lines
 
@@ -80,20 +77,21 @@ Run with `cd backend && uv run sheetydrums --help`. Test:
 
 - `uv run pytest` — fast unit tests (DI orchestration with fakes; ~0.2s)
 - `uv run pytest --run-slow` — adds the end-to-end smoke test that runs the
-  real pipeline against `backend/tests/fixtures/eric-keyes-lost.ogg` with both
-  `--larsnet` and `--no-larsnet`. ~40s total once Demucs weights are cached.
+  real pipeline against `backend/tests/fixtures/eric-keyes-lost.ogg`. ~40s once
+  model weights are cached.
 
 **Vocabulary collapse rule** (in `stages/quantize.py`'s `_INSTRUMENT_MAP`): coarse labels from the 5-class transcriber that don't make it through expansion collapse to schema-valid defaults at the emit boundary: `hihat → hihat_closed`, `cymbal → ride`, `tom → tom_mid`. This makes the output always schema-valid, with `--no-larsnet` simply producing a less-refined (but valid) transcription.
 
-**Stage swap pattern**: when a real model wrapper lands (e.g. `DemucsSeparator` replacing `StubDemucsSeparator`), the change is local to its stage module and `factory.py`. Protocols ensure the rest of the pipeline doesn't notice. Tests stay green because they inject fakes, not real models. The validator reads `schema/events.schema.json` via a relative path from the source tree — this works in editable dev install but will need `importlib.resources` if we ever ship a wheel.
+**Stage swap pattern**: when v2 adds a real sub-stem class expander, the change is a new stage file + an import-and-instantiate in `factory.py`. Protocols (`DrumSubStemSeparator`, `ClassExpander`, plus the `SubStemBranch` dataclass) are already defined in `interfaces.py` waiting to be implemented. Tests stay green because they inject fakes against the same Protocols.
+
+The validator reads `schema/events.schema.json` via a relative path from the source tree — works in editable dev install but will need `importlib.resources` if we ever ship a wheel.
 
 ## Status
 
 Walking skeleton works end to end with real Demucs + real ADTOF + real Beat This!. Pipeline currently:
 - **Demucs htdemucs_ft** — REAL (task #4). MPS on Apple Silicon. First run downloads ~320 MB of weights to `~/.cache/torch/hub/`.
 - **ADTOF Frame-RNN (pytorch port)** — REAL (task #7). Weights ship inside the `adtof-pytorch` package (~5 MB), no network on first run. 5-class output: kick / snare / tom / hihat / cymbal. CC-BY-NC-SA weights.
-- **Beat This! (final0)** — REAL (task #10). First run downloads ~77 MB. Outputs beats + downbeats; the wrapper derives tempo (median 60/IBI) and time signature (most-common beats-per-bar from downbeat positions). MIT license.
-- LarsNet sub-stem separator, sub-stem expander, quantizer — still stubs.
-- **5→7 class expansion (open/closed hi-hat, ride/crash) is deferred to v2** — see `docs/v2-backlog.md`. The drum sub-stem separator space (LarsNet, jarredou's DrumSep) has packaging + license blockers today; revisit when a permissively-licensed alternative ships. The pipeline behaves as if `--no-larsnet` is always set: the quantizer's collapse map (`hihat → hihat_closed`, `cymbal → ride`, `tom → tom_mid`) keeps output schema-valid at 5 effective classes.
+- **Beat This! (final0)** — REAL. First run downloads ~77 MB. Outputs beats + downbeats; the wrapper derives tempo (median 60/IBI) and time signature (most-common beats-per-bar from downbeat positions, restricted to {2,3,4} else falls back to 4/4). MIT license.
+- **5→7 class expansion (open/closed hi-hat, ride/crash) is deferred to v2** — see `docs/v2-backlog.md`. The drum sub-stem separator space (LarsNet, jarredou's DrumSep) has packaging + license blockers today. The quantizer's collapse map (`hihat → hihat_closed`, `cymbal → ride`, `tom → tom_mid`) keeps output schema-valid at 5 effective classes.
 
-**All v1 build tasks complete.** Pipeline produces real Demucs separation, real ADTOF transcription, real Beat This! beat grid, and clean 16th-note quantized positions (never `1/10` or `3/13` — strict snapping). v2 work tracked in `docs/v2-backlog.md`.
+**All v1 build tasks complete.** Pipeline produces real Demucs separation, real ADTOF transcription, real Beat This! beat grid, and clean 16th-note quantized positions. v2 work tracked in `docs/v2-backlog.md`.
