@@ -10,18 +10,17 @@ import typer
 
 from sheetydrums.config import CLIConfig
 from sheetydrums.factory import build_pipeline
+from sheetydrums.fetch import resolve_audio_source
 from sheetydrums.interfaces import Note, TranscriptionResult
 from sheetydrums.pipeline import Pipeline
 from sheetydrums.validate import validate
 
 
 def transcribe_command(
-    audio: Path = typer.Argument(
+    audio: str = typer.Argument(
         ...,
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="Input audio file (mp3, wav, etc.).",
+        help="Input audio: a file path (mp3/wav/flac/ogg) or a public URL "
+        "(YouTube etc. — downloaded via yt-dlp + ffmpeg to a local cache).",
     ),
     output: Path = typer.Option(
         ...,
@@ -48,8 +47,9 @@ def transcribe_command(
     )
     pipeline: Pipeline = build_pipeline(config)
 
-    typer.echo(f"Transcribing {audio.name}…")
-    result: TranscriptionResult = pipeline.transcribe(audio)
+    audio_path: Path = resolve_audio_source(audio)
+    typer.echo(f"Transcribing {audio_path.name}…")
+    result: TranscriptionResult = pipeline.transcribe(audio_path)
     events: dict[str, Any] = serialize_to_schema(result)
     validate(events)
 

@@ -69,9 +69,11 @@ backend/tests/
 ```
 
 CLI:
-- `sheetydrums INPUT.mp3 -o OUT.json` — full pipeline
+- `sheetydrums INPUT -o OUT.json` — full pipeline. `INPUT` can be a local file path (mp3/wav/flac/ogg) **or a public URL** (YouTube etc., handled by yt-dlp + ffmpeg, cached at `~/.cache/sheetydrums/youtube/<video_id>.wav`)
 - `--debug-dir DIR` — dump each stage's intermediate to `DIR/NN-stage.{json,txt}`
 - `--quiet` / `-q` — suppress per-stage stat lines
+
+URL handling lives in `src/sheetydrums/fetch.py` — detect URL → download via yt-dlp → return cached WAV path. Idempotent: re-running the same URL hits the cache. `ffmpeg` must be on PATH (`brew install ffmpeg`) for the audio extraction step.
 
 Run with `cd backend && uv run sheetydrums --help`. Test:
 

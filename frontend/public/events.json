@@ -1,77 +1,1649 @@
 {
   "version": "1",
-  "audio_file": "basic-rock.drums.mp3",
-  "duration_seconds": 8.0,
-  "tempo_bpm": 120,
-  "time_signature": { "numerator": 4, "denominator": 4 },
+  "audio_file": "eric-keyes-lost.ogg",
+  "duration_seconds": 30.069909297052153,
+  "tempo_bpm": 120.0,
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
   "bars": [
     {
       "index": 1,
-      "start_seconds": 0.0,
+      "start_seconds": 1.2400000095367432,
       "notes": [
-        { "instrument": "kick",         "position": "0",   "duration": "1/4", "confidence": 0.97 },
-        { "instrument": "hihat_closed", "position": "0",   "duration": "1/8", "confidence": 0.91 },
-        { "instrument": "hihat_closed", "position": "1/8", "duration": "1/8", "confidence": 0.89 },
-        { "instrument": "snare",        "position": "1/4", "duration": "1/4", "confidence": 0.95 },
-        { "instrument": "hihat_closed", "position": "1/4", "duration": "1/8", "confidence": 0.88 },
-        { "instrument": "hihat_closed", "position": "3/8", "duration": "1/8", "confidence": 0.86 },
-        { "instrument": "kick",         "position": "1/2", "duration": "1/4", "confidence": 0.96 },
-        { "instrument": "hihat_closed", "position": "1/2", "duration": "1/8", "confidence": 0.90 },
-        { "instrument": "hihat_closed", "position": "5/8", "duration": "1/8", "confidence": 0.87 },
-        { "instrument": "snare",        "position": "3/4", "duration": "1/4", "confidence": 0.94 },
-        { "instrument": "hihat_closed", "position": "3/4", "duration": "1/8", "confidence": 0.89 },
-        { "instrument": "hihat_closed", "position": "7/8", "duration": "1/8", "confidence": 0.85 }
+        {
+          "instrument": "snare",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.3563666343688965
+        },
+        {
+          "instrument": "ride",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.5912567973136902
+        },
+        {
+          "instrument": "kick",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.7989209890365601
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7287704348564148
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.8762511610984802
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.49615538120269775
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7122762203216553
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7449346780776978
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8805868625640869
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.6542895436286926
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.5954212546348572
+        },
+        {
+          "instrument": "ride",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.3906210660934448
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.3934350907802582
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.8339600563049316
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7990573644638062
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8492764830589294
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.6143324971199036
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.280966579914093
+        }
       ]
     },
     {
       "index": 2,
-      "start_seconds": 2.0,
+      "start_seconds": 3.259999990463257,
       "notes": [
-        { "instrument": "kick",         "position": "0",   "duration": "1/4", "confidence": 0.96 },
-        { "instrument": "crash",        "position": "0",   "duration": "1",   "confidence": 0.92 },
-        { "instrument": "hihat_closed", "position": "1/8", "duration": "1/8", "confidence": 0.84 },
-        { "instrument": "snare",        "position": "1/4", "duration": "1/4", "confidence": 0.95 },
-        { "instrument": "hihat_closed", "position": "1/4", "duration": "1/8", "confidence": 0.83 },
-        { "instrument": "hihat_closed", "position": "3/8", "duration": "1/8", "confidence": 0.82 },
-        { "instrument": "kick",         "position": "1/2", "duration": "1/4", "confidence": 0.95 },
-        { "instrument": "hihat_closed", "position": "1/2", "duration": "1/8", "confidence": 0.88 },
-        { "instrument": "hihat_closed", "position": "5/8", "duration": "1/8", "confidence": 0.81 },
-        { "instrument": "snare",        "position": "3/4", "duration": "1/4", "confidence": 0.93 },
-        { "instrument": "hihat_open",   "position": "3/4", "duration": "1/8", "confidence": 0.76 },
-        { "instrument": "hihat_chick",  "position": "7/8", "duration": "1/8", "confidence": 0.82 }
+        {
+          "instrument": "hihat_closed",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.4587867856025696
+        },
+        {
+          "instrument": "kick",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.8332503437995911
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.3660423159599304
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7894077897071838
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.7877575755119324
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.3711313009262085
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.36194491386413574
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7446084022521973
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8836122155189514
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.7448861002922058
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.5998933911323547
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.5435624718666077
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.43877139687538147
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.3663400113582611
+        },
+        {
+          "instrument": "kick",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.7314192056655884
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7870656847953796
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8265080451965332
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.7050527930259705
+        }
       ]
     },
     {
       "index": 3,
-      "start_seconds": 4.0,
+      "start_seconds": 5.28000020980835,
       "notes": [
-        { "instrument": "kick",         "position": "0",    "duration": "1/4", "confidence": 0.96 },
-        { "instrument": "hihat_closed", "position": "0",    "duration": "1/8", "confidence": 0.90 },
-        { "instrument": "hihat_closed", "position": "1/8",  "duration": "1/8", "confidence": 0.88 },
-        { "instrument": "snare",        "position": "1/4",  "duration": "1/4", "confidence": 0.95 },
-        { "instrument": "hihat_closed", "position": "1/4",  "duration": "1/8", "confidence": 0.87 },
-        { "instrument": "hihat_closed", "position": "3/8",  "duration": "1/8", "confidence": 0.85 },
-        { "instrument": "snare",        "position": "1/2",  "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t1" }, "confidence": 0.91 },
-        { "instrument": "tom_high",     "position": "7/12", "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t1" }, "confidence": 0.78 },
-        { "instrument": "tom_mid",      "position": "2/3",  "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t1" }, "confidence": 0.75 },
-        { "instrument": "tom_high",     "position": "3/4",  "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t2" }, "confidence": 0.79 },
-        { "instrument": "tom_mid",      "position": "5/6",  "duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t2" }, "confidence": 0.77 },
-        { "instrument": "tom_low",      "position": "11/12","duration": "1/8", "tuplet": { "actual": 3, "normal": 2, "group": "t2" }, "confidence": 0.74 }
+        {
+          "instrument": "ride",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.6037662029266357
+        },
+        {
+          "instrument": "kick",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.8443690538406372
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7325516939163208
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.8196778893470764
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.3197150230407715
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.6278934478759766
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7896219491958618
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8905531167984009
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.5518624186515808
+        },
+        {
+          "instrument": "snare",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.6482413411140442
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7482352256774902
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7601919770240784
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.2705409824848175
+        },
+        {
+          "instrument": "kick",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.8450525999069214
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.8035998344421387
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.3347974717617035
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8400425910949707
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.6856850981712341
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.5630491971969604
+        },
+        {
+          "instrument": "ride",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.8123492002487183
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.8970081806182861
+        }
       ]
     },
     {
       "index": 4,
-      "start_seconds": 6.0,
+      "start_seconds": 7.320000171661377,
       "notes": [
-        { "instrument": "kick",         "position": "0",   "duration": "1/4", "confidence": 0.96 },
-        { "instrument": "hihat_closed", "position": "0",   "duration": "1/8", "confidence": 0.89 },
-        { "instrument": "hihat_closed", "position": "1/8", "duration": "1/8", "confidence": 0.87 },
-        { "instrument": "snare",        "position": "1/4", "duration": "1/4", "confidence": 0.94 },
-        { "instrument": "hihat_open",   "position": "1/4", "duration": "1/4", "sustain_until": "3/8", "confidence": 0.72 },
-        { "instrument": "kick",         "position": "1/2", "duration": "1/4", "confidence": 0.95 },
-        { "instrument": "snare",        "position": "3/4", "duration": "1/4", "confidence": 0.93 },
-        { "instrument": "hihat_closed", "position": "3/4", "duration": "1/8", "confidence": 0.88 },
-        { "instrument": "hihat_closed", "position": "7/8", "duration": "1/8", "confidence": 0.86 }
+        {
+          "instrument": "hihat_closed",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.4134475290775299
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7958718538284302
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.4930292069911957
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.8734351396560669
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/16",
+          "duration": "1/8",
+          "confidence": 0.3619392514228821
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.6318652033805847
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.6102848649024963
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8340452909469604
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8579402565956116
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.5377538204193115
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.7037067413330078
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.6129096150398254
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.8057650327682495
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7457188963890076
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.5283645391464233
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8269921541213989
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.7332850694656372
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.6498637795448303
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.6590322852134705
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.8261828422546387
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "start_seconds": 9.319999694824219,
+      "notes": [
+        {
+          "instrument": "hihat_closed",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.5618277788162231
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.8494541645050049
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.8096948862075806
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/16",
+          "duration": "1/8",
+          "confidence": 0.38428235054016113
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7235644459724426
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.5927858948707581
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.777783215045929
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8750272393226624
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.6682593822479248
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.5754472613334656
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7635611891746521
+        },
+        {
+          "instrument": "snare",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.7209582328796387
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7775061130523682
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8456701636314392
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.8360903263092041
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.7369983196258545
+        },
+        {
+          "instrument": "ride",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.6839565634727478
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.2823564410209656
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "start_seconds": 11.34000015258789,
+      "notes": [
+        {
+          "instrument": "kick",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.6423176527023315
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.6307150721549988
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.8777956962585449
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.40663838386535645
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7178705930709839
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8257006406784058
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.6584784388542175
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.6366980671882629
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.6258546710014343
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.8246314525604248
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.758364737033844
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.4511803090572357
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8473934531211853
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.6726371645927429
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.41325098276138306
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.5176310539245605
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.6134249567985535
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "start_seconds": 13.359999656677246,
+      "notes": [
+        {
+          "instrument": "ride",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.7798227667808533
+        },
+        {
+          "instrument": "kick",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.877723217010498
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.32434919476509094
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7646679282188416
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.8578581809997559
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/16",
+          "duration": "1/8",
+          "confidence": 0.4266386330127716
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7444881200790405
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7217102646827698
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.5582464337348938
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8183329701423645
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.749710202217102
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.6327673196792603
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7734955549240112
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.8809929490089417
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.82328200340271
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.6540441513061523
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.7815935015678406
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.5650849938392639
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.7907570600509644
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.5471806526184082
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.7544566988945007
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.8859052062034607
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "start_seconds": 15.359999656677246,
+      "notes": [
+        {
+          "instrument": "hihat_closed",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.6601680517196655
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/8",
+          "duration": "1/8",
+          "confidence": 0.619627058506012
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.4512106478214264
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.8373183608055115
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.780724048614502
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/16",
+          "duration": "1/8",
+          "confidence": 0.2851925790309906
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7360747456550598
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.39221811294555664
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7938137650489807
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7052383422851562
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.5343830585479736
+        },
+        {
+          "instrument": "snare",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.7462792992591858
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7310241460800171
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.4757108986377716
+        },
+        {
+          "instrument": "kick",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.7034818530082703
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7368845343589783
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.47973960638046265
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8059530854225159
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.7208499908447266
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.5983986258506775
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "start_seconds": 17.3799991607666,
+      "notes": [
+        {
+          "instrument": "hihat_closed",
+          "position": "1/8",
+          "duration": "1/8",
+          "confidence": 0.40837252140045166
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.5196667909622192
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7973383069038391
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.7994158864021301
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/16",
+          "duration": "1/8",
+          "confidence": 0.3596661686897278
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.6606748104095459
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.6102475523948669
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7401736378669739
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8441843390464783
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.7754310965538025
+        },
+        {
+          "instrument": "snare",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.6243523955345154
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.8342499732971191
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.9012999534606934
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.6927329897880554
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7936290502548218
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.7175204157829285
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8033073544502258
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.5815965533256531
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.6708905100822449
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.7830226421356201
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "start_seconds": 19.399999618530273,
+      "notes": [
+        {
+          "instrument": "hihat_closed",
+          "position": "1/8",
+          "duration": "1/8",
+          "confidence": 0.46433594822883606
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7438154816627502
+        },
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7450452446937561
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.7719596028327942
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "5/16",
+          "duration": "1/8",
+          "confidence": 0.5151625275611877
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7059166431427002
+        },
+        {
+          "instrument": "kick",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.46356120705604553
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7416729927062988
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8640537858009338
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.634282112121582
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.6231245994567871
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7885422706604004
+        },
+        {
+          "instrument": "snare",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.7291545271873474
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7092121243476868
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.8658367991447449
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.8118676543235779
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.8144989013671875
+        },
+        {
+          "instrument": "ride",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.8110812902450562
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.8698780536651611
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "start_seconds": 21.399999618530273,
+      "notes": [
+        {
+          "instrument": "kick",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.6047223210334778
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.7428485751152039
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.5693461894989014
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7926205992698669
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7283326983451843
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.3445500433444977
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.5875356793403625
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.8066579103469849
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.5574212670326233
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7949838042259216
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.49865075945854187
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.49218326807022095
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.6655803918838501
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.7794033885002136
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "start_seconds": 23.420000076293945,
+      "notes": [
+        {
+          "instrument": "tom_mid",
+          "position": "1/8",
+          "duration": "1/8",
+          "confidence": 0.463350772857666
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.567911684513092
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.7657409906387329
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.556498646736145
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7496321797370911
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.28837886452674866
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7342363595962524
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.44346487522125244
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.502111554145813
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7499427795410156
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.5669213533401489
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.6684311628341675
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.6946848630905151
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.579908549785614
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.851976752281189
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "start_seconds": 25.440000534057617,
+      "notes": [
+        {
+          "instrument": "tom_mid",
+          "position": "1/8",
+          "duration": "1/8",
+          "confidence": 0.4255843162536621
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.6213703751564026
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.7677390575408936
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7480047941207886
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.7983782291412354
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.4012090861797333
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.5286198258399963
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.6413605809211731
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7673569321632385
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.6238535642623901
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.6209442615509033
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7474525570869446
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.5348368287086487
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.6154133081436157
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.5787868499755859
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.43017977476119995
+        },
+        {
+          "instrument": "kick",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.8307647705078125
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.421215683221817
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "start_seconds": 27.459999084472656,
+      "notes": [
+        {
+          "instrument": "snare",
+          "position": "1/16",
+          "duration": "1/8",
+          "confidence": 0.41946759819984436
+        },
+        {
+          "instrument": "snare",
+          "position": "1/8",
+          "duration": "1/8",
+          "confidence": 0.5083783268928528
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "3/16",
+          "duration": "1/8",
+          "confidence": 0.7312560081481934
+        },
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.74156653881073
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "3/8",
+          "duration": "1/8",
+          "confidence": 0.7549585700035095
+        },
+        {
+          "instrument": "kick",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.8272299766540527
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "7/16",
+          "duration": "1/8",
+          "confidence": 0.5218459367752075
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "1/2",
+          "duration": "1/8",
+          "confidence": 0.46197953820228577
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "9/16",
+          "duration": "1/8",
+          "confidence": 0.44328227639198303
+        },
+        {
+          "instrument": "kick",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.7878057360649109
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "5/8",
+          "duration": "1/8",
+          "confidence": 0.5932478904724121
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "11/16",
+          "duration": "1/8",
+          "confidence": 0.6301761865615845
+        },
+        {
+          "instrument": "snare",
+          "position": "3/4",
+          "duration": "1/8",
+          "confidence": 0.7447656393051147
+        },
+        {
+          "instrument": "kick",
+          "position": "13/16",
+          "duration": "1/8",
+          "confidence": 0.6099233627319336
+        },
+        {
+          "instrument": "tom_mid",
+          "position": "7/8",
+          "duration": "1/8",
+          "confidence": 0.49962636828422546
+        },
+        {
+          "instrument": "hihat_closed",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.3352767527103424
+        },
+        {
+          "instrument": "snare",
+          "position": "15/16",
+          "duration": "1/8",
+          "confidence": 0.3530530333518982
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "start_seconds": 29.479999542236328,
+      "notes": [
+        {
+          "instrument": "snare",
+          "position": "1/4",
+          "duration": "1/8",
+          "confidence": 0.7602407932281494
+        }
       ]
     }
   ]
