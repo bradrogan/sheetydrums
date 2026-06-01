@@ -12,6 +12,7 @@ from pathlib import Path
 
 from sheetydrums.audio import AudioBuffer, load_audio
 from sheetydrums.debug import DebugSink
+from sheetydrums.phase_correct import correct_downbeat_phase
 from sheetydrums.interfaces import (
     Bar,
     BeatGrid,
@@ -87,10 +88,19 @@ class Pipeline:
             )
 
         grid: BeatGrid = self._beat_tracker.track(mix)
+        # Downbeat-phase correction: Beat This! can place downbeats off-phase
+        # in songs with sparse intros or strong backbeats. Use kick locations
+        # to rotate the downbeat labels onto the beats kicks actually land on.
+        # No-op when there aren't enough kicks or the kick distribution is
+        # too uniform to be confident.
+        n_downbeats_before: int = sum(1 for b in grid.beats if b.is_downbeat)
+        grid = correct_downbeat_phase(hits, grid)
+        n_downbeats_after: int = sum(1 for b in grid.beats if b.is_downbeat)
         self._log(
             f"[beats:{self._beat_tracker.name}] {grid.tempo_bpm:.1f} BPM, "
             f"{grid.time_signature.numerator}/{grid.time_signature.denominator}, "
-            f"{len(grid.beats)} beats"
+            f"{len(grid.beats)} beats, downbeats after phase correction: "
+            f"{n_downbeats_after} (was {n_downbeats_before})"
         )
         self._debug.write_json(
             f"beats-{self._beat_tracker.name}",

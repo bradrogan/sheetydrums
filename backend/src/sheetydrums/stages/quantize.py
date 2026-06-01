@@ -2,8 +2,26 @@
 
 Conforms to `interfaces.Quantizer`. Strictly snaps positions to the nearest
 16th note within each bar; positions are always `n/16` for some integer
-`0 <= n < 16` (and simplify naturally — `0/16` → `0`, `8/16` → `1/2`, etc.).
-Triplet detection is deferred to v2 (see docs/v2-backlog.md).
+`0 <= n < bar_size_in_16ths` (and simplify naturally — `0/16` → `0`,
+`8/16` → `1/2`, etc.). Triplet detection is deferred to v2
+(see docs/v2-backlog.md).
+
+Two non-obvious choices that this module makes:
+
+1. **Each bar's duration is read from the beat grid**, not derived from
+   the song's median tempo. Beat This! reports tempo to the nearest 2 BPM
+   (50 Hz frame rate), and within a song its detected beats drift by 10-30 ms
+   per beat. Using `60/tempo` as a uniform bar length means hits near the
+   end of a bar get assigned positions like `15/16` even when the drummer
+   played them on the next bar's downbeat. Using per-bar actual durations
+   from consecutive downbeats avoids this.
+
+2. **Hits whose quantized position would land at the very end of a bar
+   spill forward into the next bar at position 0.** Drummers play
+   ahead-of-the-beat all the time — a kick at 99% of bar N is musically
+   beat 1 of bar N+1 played slightly early. Without this, that kick
+   renders at position 15/16 of bar N (Back In Black's iconic
+   beat-1 kicks were doing exactly this, hidden as `kick@15/16`).
 """
 from __future__ import annotations
 
@@ -54,27 +72,62 @@ class StubQuantizer:
         hits: tuple[DrumHit, ...],
         grid: BeatGrid,
     ) -> tuple[Bar, ...]:
-        if not grid.beats:
+        downbeat_times: list[float] = [b.time for b in grid.beats if b.is_downbeat]
+        if not downbeat_times:
             return ()
 
-        beat_seconds: float = 60.0 / grid.tempo_bpm
-        whole_note_seconds: float = beat_seconds * grid.time_signature.denominator
-        bar_seconds: float = beat_seconds * grid.time_signature.numerator
-        downbeat_times: list[float] = [b.time for b in grid.beats if b.is_downbeat]
+        # bar_in_whole_notes: how many whole notes one bar contains.
+        # 4/4 → 1.0; 3/4 → 0.75; 6/8 → 0.75. We use this to scale "fraction
+        # of bar" to "fraction of whole note" (the schema's position unit).
+        bar_in_whole_notes: float = (
+            grid.time_signature.numerator / grid.time_signature.denominator
+        )
+        # Maximum schema-valid position-in-16ths inside one bar.
+        # 4/4: 16 (positions 0..15); 3/4: 12 (positions 0..11).
+        max_subdivisions: int = round(bar_in_whole_notes * _SUBDIVISIONS_PER_WHOLE)
 
-        bar_notes: dict[int, list[Note]] = {
-            idx: [] for idx in range(1, len(downbeat_times) + 1)
-        }
+        # Per-bar actual durations from downbeat positions. The last bar has
+        # no following downbeat, so we use the median of the others — a
+        # robust estimate even when a few bars drift.
+        bar_durations: list[float] = [
+            downbeat_times[i + 1] - downbeat_times[i]
+            for i in range(len(downbeat_times) - 1)
+        ]
+        if bar_durations:
+            median_duration: float = sorted(bar_durations)[len(bar_durations) // 2]
+        else:
+            median_duration = 60.0 / grid.tempo_bpm * grid.time_signature.numerator
+        bar_durations.append(median_duration)
+
+        n_bars: int = len(downbeat_times)
+        bar_notes: dict[int, list[Note]] = {idx: [] for idx in range(1, n_bars + 1)}
 
         for hit in hits:
-            bar_idx: int | None = _find_bar(hit.time, downbeat_times, bar_seconds)
+            bar_idx: int | None = _find_bar(hit.time, downbeat_times, median_duration)
             if bar_idx is None:
-                continue  # hit falls outside the detected bar grid; drop
+                continue  # before the first downbeat — drop
+
+            # Convert hit's offset into bar to a snapped 16th-note position.
             bar_start: float = downbeat_times[bar_idx - 1]
-            offset_seconds: float = hit.time - bar_start
-            position: Fraction = _snap_to_subdivision(
-                offset_seconds, whole_note_seconds, _SUBDIVISIONS_PER_WHOLE,
-            )
+            bar_duration: float = bar_durations[bar_idx - 1]
+            offset: float = hit.time - bar_start
+            position_frac: float = offset / bar_duration  # fraction of this bar
+            position_in_whole_notes: float = position_frac * bar_in_whole_notes
+            snapped: int = round(position_in_whole_notes * _SUBDIVISIONS_PER_WHOLE)
+
+            # Off-by-one fix: if the rounded position equals a full bar's worth
+            # of subdivisions, the hit is musically the next bar's downbeat
+            # played a few ms early. Spill it forward.
+            if snapped >= max_subdivisions:
+                if bar_idx + 1 in bar_notes:
+                    bar_idx += 1
+                    snapped = 0
+                else:
+                    # No next bar — clamp to the last valid position.
+                    snapped = max_subdivisions - 1
+            snapped = max(0, snapped)
+
+            position: Fraction = Fraction(snapped, _SUBDIVISIONS_PER_WHOLE)
             instrument: SchemaDrumClass = _to_schema_class(hit.drum_class)
             bar_notes[bar_idx].append(
                 Note(
@@ -91,39 +144,23 @@ class StubQuantizer:
                 start_seconds=downbeat_times[idx - 1],
                 notes=tuple(bar_notes[idx]),
             )
-            for idx in range(1, len(downbeat_times) + 1)
+            for idx in range(1, n_bars + 1)
         )
 
 
-def _find_bar(t: float, downbeat_times: list[float], bar_seconds: float) -> int | None:
-    """1-based bar index that contains `t`, or None if it falls outside the grid."""
+def _find_bar(
+    t: float,
+    downbeat_times: list[float],
+    last_bar_seconds: float,
+) -> int | None:
+    """1-based bar index containing `t`, or None if `t` is before the first
+    downbeat. The last bar extends `last_bar_seconds` past its downbeat."""
+    n: int = len(downbeat_times)
     for idx, start in enumerate(downbeat_times, start=1):
-        if start <= t < start + bar_seconds:
+        end: float = downbeat_times[idx] if idx < n else start + last_bar_seconds
+        if start <= t < end:
             return idx
     return None
-
-
-def _snap_to_subdivision(
-    offset_seconds: float,
-    whole_note_seconds: float,
-    subdivisions_per_whole: int,
-) -> Fraction:
-    """Snap `offset_seconds` to the nearest n/subdivisions_per_whole position.
-
-    Unlike Fraction.limit_denominator(N) which would happily return non-grid
-    fractions like 1/3 or 3/13 when they're mathematically closer to the offset
-    than any n/16, this snaps strictly to multiples of 1/subdivisions_per_whole.
-    The denominator of the returned Fraction may be smaller than the subdivision
-    (e.g. 8/16 simplifies to 1/2) but is never coarser — always a power-of-2
-    division of the bar.
-    """
-    raw_subdivisions: float = offset_seconds / whole_note_seconds * subdivisions_per_whole
-    snapped: int = round(raw_subdivisions)
-    # Clamp to [0, subdivisions_per_whole - 1]; an onset at exactly the next
-    # downbeat should belong to the next bar (handled by _find_bar), so we cap
-    # at the last sixteenth of the current bar rather than letting it wrap.
-    snapped = max(0, min(snapped, subdivisions_per_whole - 1))
-    return Fraction(snapped, subdivisions_per_whole)
 
 
 def _format_fraction(frac: Fraction) -> str:
