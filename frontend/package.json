@@ -5,7 +5,7 @@
   "type": "module",
   "description": "VexFlow-based renderer for sheetydrums events.json",
   "scripts": {
-    "schema:gen": "json2ts -i ../schema/events.schema.json -o src/generated/events.d.ts --no-additionalProperties",
+    "schema:gen": "json2ts -i ../schema/events.schema.json -o src/generated/events.d.ts --no-additionalProperties && json2ts -i ../schema/project.schema.json -o src/generated/project.d.ts --no-additionalProperties --cwd ../schema",
     "typecheck": "tsc --noEmit",
     "dev": "vite",
     "prebuild": "pnpm run schema:gen && pnpm run typecheck",

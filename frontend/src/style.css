@@ -10,14 +10,129 @@ body {
 }
 
 header h1 {
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 1rem 0;
   font-size: 1.5rem;
 }
 
 #meta {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color: #555;
-  margin-bottom: 1.5rem;
+}
+
+.card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+  max-width: 720px;
+}
+
+.card h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.05rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 1rem;
+}
+
+button.tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: #666;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+button.tab.active {
+  color: #222;
+  border-bottom-color: #222;
+}
+
+.form-pane {
+  display: none;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form-pane.active {
+  display: flex;
+}
+
+.form-pane label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.form-pane label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-pane input[type="file"],
+.form-pane input[type="url"] {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+}
+
+button {
+  background: #222;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #000;
+}
+
+#progress-log {
+  background: #2d2d2d;
+  color: #f8f8f2;
+  padding: 1rem;
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-height: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  margin: 0 0 1rem 0;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+#meta {
+  margin-bottom: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 #score {
@@ -69,4 +184,395 @@ details pre {
   font-size: 0.85rem;
   line-height: 1.4;
   max-height: 60vh;
+}
+
+header h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.muted {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.section-title {
+  font-size: 1.05rem;
+  margin: 1.5rem 0 0.75rem 0;
+}
+
+button.ghost {
+  background: transparent;
+  color: #444;
+  border: 1px solid #ccc;
+}
+
+button.ghost:hover {
+  background: #f0f0f0;
+  color: #000;
+}
+
+/* === Projects list === */
+
+#project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.project-card {
+  position: relative;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.15s ease;
+}
+
+.project-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.project-card .thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #eee;
+  cursor: pointer;
+  display: block;
+}
+
+.project-card .card-body {
+  padding: 0.6rem 0.75rem 0.75rem;
+}
+
+.project-card .card-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  cursor: pointer;
+  margin-bottom: 0.35rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.project-card .card-title:hover {
+  text-decoration: underline;
+}
+
+.project-card .card-stats {
+  margin-bottom: 0.15rem;
+}
+
+.project-card .card-delete {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  font-size: 0.8rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.project-card:hover .card-delete {
+  opacity: 1;
+}
+
+.project-card .card-delete:hover {
+  background: #c0392b;
+}
+
+/* === Project view: two-column layout === */
+
+.project-topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.project-topbar #meta {
+  flex: 1 1 auto;
+}
+
+.project-layout {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+/* Left column stays put while the score column scrolls. */
+.project-left {
+  position: sticky;
+  top: 1rem;
+  flex: 0 0 360px;
+  width: 360px;
+  align-self: flex-start;
+}
+
+.project-right {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* === Player + transport === */
+
+#player {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#player iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+#stem-audio {
+  display: none;
+}
+
+.source-select {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 0.5rem;
+}
+.source-select label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+.source-select label.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#transport {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.transport-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#transport button {
+  padding: 0.4rem 0.6rem;
+}
+
+#transport button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#playpause-btn {
+  min-width: 5.5rem;
+}
+
+#loop-secs {
+  width: 3.5rem;
+  font: inherit;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.loop-ctl {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+#volume {
+  flex: 1 1 auto;
+}
+
+button#edit-toggle.active {
+  background: #2d6cdf;
+  color: white;
+  border-color: #2d6cdf;
+}
+
+/* Edit mode: crosshair cursor over the score, subtle tint. */
+#score.editing .bar-svg {
+  cursor: crosshair;
+}
+#score.editing {
+  outline: 2px dashed rgba(45, 108, 223, 0.4);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.edit-popover {
+  position: fixed;
+  z-index: 100;
+  background: white;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.edit-popover select {
+  font: inherit;
+  padding: 0.25rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+.edit-popover-row {
+  display: flex;
+  gap: 0.35rem;
+}
+.edit-popover-row button {
+  padding: 0.3rem 0.55rem;
+  background: #eee;
+  color: #222;
+}
+.edit-popover-row button:hover {
+  background: #ddd;
+}
+.edit-popover-row button.danger {
+  background: #c0392b;
+  color: white;
+  margin-left: auto;
+}
+.edit-popover-row button.danger:hover {
+  background: #a5281b;
+}
+
+/* Unsaved-changes modal (leaving edit mode). */
+.edit-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.edit-modal {
+  background: white;
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  max-width: 380px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+.edit-modal p {
+  margin: 0 0 1rem 0;
+}
+.edit-modal-row {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.edit-modal-row button.primary {
+  background: #2d6cdf;
+}
+.edit-modal-row button.danger {
+  background: #c0392b;
+}
+.edit-modal-row button:not(.primary):not(.danger) {
+  background: #eee;
+  color: #222;
+}
+
+/* === Playhead + note highlight (Phase 1) === */
+
+.bar-svg {
+  position: relative;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  background: #e74c3c;
+  pointer-events: none;
+  display: none;
+  z-index: 2;
+}
+
+.playhead.active {
+  display: block;
+}
+
+.note-highlight {
+  position: absolute;
+  top: 0;
+  background: rgba(231, 76, 60, 0.15);
+  pointer-events: none;
+  display: none;
+  z-index: 1;
+}
+
+.note-highlight.active {
+  display: block;
+}
+
+/* Print → PDF flow: window.print() exports the score only. Hide chrome,
+ * strip the score-card frame, and scale each bar SVG to the page width via
+ * the viewBox attribute set in render.ts. */
+@media print {
+  body {
+    margin: 0;
+    background: white;
+  }
+  .no-print {
+    display: none !important;
+  }
+  main {
+    margin: 0;
+  }
+  #score {
+    border: none;
+    padding: 0;
+    margin: 0;
+    background: white;
+  }
+  .bar-row {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-bottom: 0.25in;
+  }
+  .bar-svg {
+    width: 100%;
+    overflow: visible;
+  }
+  .bar-svg svg {
+    width: 100% !important;
+    height: auto !important;
+    display: block;
+  }
+  @page {
+    size: letter portrait;
+    margin: 0.5in;
+  }
 }

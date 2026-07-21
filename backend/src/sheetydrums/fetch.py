@@ -10,12 +10,32 @@ the same URL is a no-op (yt-dlp sees the file exists and skips re-download).
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 
 _CACHE_DIR: Path = Path.home() / ".cache" / "sheetydrums" / "youtube"
+
+
+@dataclass(frozen=True)
+class DownloadedAudio:
+    """A downloaded audio source plus the source metadata we care about."""
+
+    path: Path
+    video_id: str
+    title: str | None
+
+
+def download_audio(url: str) -> DownloadedAudio:
+    """Download `url`'s audio, returning the cached path + source metadata.
+
+    Unlike `resolve_audio_source` (which returns only a Path for CLI use), this
+    surfaces the yt-dlp video id and title so the web app can build a project
+    record around the source.
+    """
+    return _download_audio(url)
 
 
 def resolve_audio_source(audio_input: str) -> Path:
@@ -25,7 +45,7 @@ def resolve_audio_source(audio_input: str) -> Path:
     (or its subclasses) for unavailable / DRM-locked / network-failed URLs.
     """
     if _looks_like_url(audio_input):
-        return _download_audio(audio_input)
+        return _download_audio(audio_input).path
     path = Path(audio_input)
     if not path.exists():
         raise FileNotFoundError(f"Audio file not found: {path}")
@@ -39,8 +59,8 @@ def _looks_like_url(s: str) -> bool:
     return parsed.scheme in ("http", "https")
 
 
-def _download_audio(url: str) -> Path:
-    """Download `url`'s audio via yt-dlp, return the cached WAV path."""
+def _download_audio(url: str) -> DownloadedAudio:
+    """Download `url`'s audio via yt-dlp, return the cached WAV path + metadata."""
     # Imported lazily so a `sheetydrums --help` doesn't pay the yt-dlp import
     # cost (which transitively pulls in a lot of extractor modules).
     import yt_dlp  # type: ignore[import-untyped]
@@ -70,6 +90,7 @@ def _download_audio(url: str) -> Path:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info: Any = ydl.extract_info(url, download=True)
         video_id: str = info["id"]
+        title: str | None = info.get("title")
 
     cached: Path = _CACHE_DIR / f"{video_id}.wav"
     if not cached.exists():
@@ -77,4 +98,4 @@ def _download_audio(url: str) -> Path:
             f"yt-dlp completed but cached file is missing: {cached}. "
             f"Check that ffmpeg is on PATH (needed for audio extraction)."
         )
-    return cached
+    return DownloadedAudio(path=cached, video_id=video_id, title=title)

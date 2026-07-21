@@ -7,16 +7,87 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header>
-      <h1>sheetydrums</h1>
-      <div id="meta"></div>
+    <header class="no-print">
+      <h1><a href="#/" id="home-link">sheetydrums</a></h1>
     </header>
     <main>
-      <section id="score"></section>
-      <details>
-        <summary>Raw events.json</summary>
-        <pre id="raw"></pre>
-      </details>
+      <!-- ============ Projects list ============ -->
+      <section id="list-section" class="no-print" hidden>
+        <section class="card">
+          <h2>New transcription</h2>
+          <form id="url-form" class="form-pane active">
+            <label>
+              YouTube URL
+              <input type="url" id="audio-url" placeholder="https://youtube.com/watch?v=..." required />
+            </label>
+            <label class="checkbox">
+              <input type="checkbox" id="url-drumsep" checked />
+              Use DrumSep (slower; splits hi-hat open/closed and ride/crash)
+            </label>
+            <button type="submit">Transcribe</button>
+          </form>
+        </section>
+
+        <h2 class="section-title">Projects</h2>
+        <div id="project-grid"></div>
+        <p id="empty-projects" class="muted" hidden>No projects yet. Transcribe a YouTube video to get started.</p>
+      </section>
+
+      <!-- ============ Transcription progress ============ -->
+      <section id="progress-section" class="card no-print" hidden>
+        <h2 id="progress-title">Working…</h2>
+        <pre id="progress-log"></pre>
+        <button type="button" id="cancel-btn">Cancel</button>
+      </section>
+
+      <!-- ============ Project view ============ -->
+      <section id="project-section" hidden>
+        <div class="project-topbar no-print">
+          <button type="button" id="back-btn" class="ghost">← Projects</button>
+          <div id="meta"></div>
+          <button type="button" id="edit-toggle" class="ghost">Edit</button>
+          <button type="button" id="save-btn" hidden>Saved</button>
+          <button type="button" id="pdf-btn">Download PDF</button>
+        </div>
+        <div class="project-layout">
+          <aside class="project-left no-print">
+            <div id="player-wrap">
+              <div class="source-select" id="source-select">
+                <label><input type="radio" name="source" value="youtube" checked /> YouTube (full mix)</label>
+                <label><input type="radio" name="source" value="stem" /> Drums only</label>
+              </div>
+              <div id="player"></div>
+              <audio id="stem-audio" preload="none"></audio>
+              <div id="transport">
+                <div class="transport-row">
+                  <button type="button" id="back10-btn" title="Back 10 seconds" disabled>⏪&nbsp;10s</button>
+                  <button type="button" id="playpause-btn" disabled>▶︎ Play</button>
+                  <button type="button" id="fwd10-btn" title="Forward 10 seconds" disabled>10s&nbsp;⏩</button>
+                  <span id="playhead-time" class="muted">0:00</span>
+                </div>
+                <div class="transport-row">
+                  <label class="loop-ctl">
+                    <input type="checkbox" id="loop-toggle" disabled /> Loop last
+                  </label>
+                  <input type="number" id="loop-secs" value="5" min="1" max="60" step="1" />
+                  <span class="muted">s</span>
+                </div>
+                <div class="transport-row">
+                  <label for="volume">Vol</label>
+                  <input type="range" id="volume" min="0" max="100" value="100" />
+                </div>
+              </div>
+            </div>
+          </aside>
+          <div class="project-right">
+            <div id="score"></div>
+            <details class="no-print">
+              <summary>Raw notation JSON</summary>
+              <pre id="raw"></pre>
+            </details>
+          </div>
+        </div>
+      </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

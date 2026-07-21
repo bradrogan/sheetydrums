@@ -39,11 +39,18 @@ def transcribe_command(
         "-q",
         help="Suppress per-stage stat lines.",
     ),
+    no_drumsep: bool = typer.Option(
+        False,
+        "--no-drumsep",
+        help="Skip the MDX23C DrumSep sub-stem branch. The output keeps 5-class "
+        "vocabulary (no open/closed hat or ride/crash distinction).",
+    ),
 ) -> None:
     """Transcribe an audio file's drum part to events.json."""
     config: CLIConfig = CLIConfig(
         debug_dir=debug_dir,
         verbose=not quiet,
+        use_drumsep=not no_drumsep,
     )
     pipeline: Pipeline = build_pipeline(config)
 

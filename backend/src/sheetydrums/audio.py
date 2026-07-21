@@ -53,6 +53,12 @@ def load_audio(path: Path, target_sample_rate: int = 44100) -> AudioBuffer:
     return AudioBuffer(samples=samples_arr, sample_rate=target_sample_rate)
 
 
+def save_audio(path: Path, buffer: AudioBuffer) -> None:
+    """Write `buffer` to `path` as a WAV (16-bit PCM) via libsndfile."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(path), buffer.samples, buffer.sample_rate, subtype="PCM_16")
+
+
 def _resample(
     samples: NDArray[np.floating],
     src_rate: int,

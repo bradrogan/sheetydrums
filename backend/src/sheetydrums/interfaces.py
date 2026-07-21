@@ -86,12 +86,20 @@ class BeatGrid:
 
 @dataclass(frozen=True)
 class DrumSubStems:
-    """Per-drum-class audio sub-stems produced by a sub-stem separator (e.g. LarsNet)."""
+    """Per-drum-class audio sub-stems produced by a sub-stem separator.
+
+    Six stems matches the MDX23C 6-stem DrumSep model by aufr33/jarredou — the
+    current best-available open separator that splits cymbals natively into
+    ride and crash. With these stems the expander can:
+      - hihat hit + hihat stem decay → hihat_closed vs hihat_open
+      - cymbal hit + ride stem vs crash stem energy → ride vs crash
+    """
     kick: AudioBuffer
     snare: AudioBuffer
     hihat: AudioBuffer
     toms: AudioBuffer
-    cymbals: AudioBuffer
+    ride: AudioBuffer
+    crash: AudioBuffer
 
 
 @dataclass(frozen=True)

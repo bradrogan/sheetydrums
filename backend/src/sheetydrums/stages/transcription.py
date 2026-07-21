@@ -23,10 +23,7 @@ from adtof_pytorch import (
     load_pytorch_weights,
 )
 from adtof_pytorch.audio import create_adtof_processor
-from adtof_pytorch.post_processing import (
-    FRAME_RNN_THRESHOLDS,
-    NotePeakPickingProcessor,
-)
+from adtof_pytorch.post_processing import NotePeakPickingProcessor
 from numpy.typing import NDArray
 from scipy import signal as scipy_signal
 
@@ -45,6 +42,23 @@ _CLASS_AT_INDEX: tuple[TranscriberDrumClass, ...] = (
 _MODEL_SAMPLE_RATE = 44100
 _MODEL_FPS = 100  # one model frame every 10 ms
 
+# Per-class peak-picking thresholds, in _CLASS_AT_INDEX order
+# (kick, snare, tom, hihat, cymbal). The model authors' defaults
+# (FRAME_RNN_THRESHOLDS = [0.22, 0.24, 0.32, 0.22, 0.3]) are tuned for balanced
+# F-score on their eval set, but on real songs they under-detect the recall-weak
+# classes: steady eighth ride/hi-hat patterns drop hits (e.g. off-beats between
+# louder accents) and toms are missed outright. We lower cymbal, tom, and hi-hat
+# for better recall; kick/snare are already reliable, so we leave them (raising
+# their recall mostly adds false positives). Tune empirically per
+# backend/scripts/eval/.
+_TUNED_THRESHOLDS: tuple[float, ...] = (
+    0.22,  # kick   (unchanged)
+    0.24,  # snare  (unchanged)
+    0.20,  # tom    (was 0.32 — tom recall is the weakest class)
+    0.16,  # hihat  (was 0.22)
+    0.18,  # cymbal (was 0.30 — steady ride patterns drop off-beats)
+)
+
 
 class ADTOFTranscriber:
     """ADTOF Frame-RNN drum transcriber, 5-class output."""
@@ -52,10 +66,15 @@ class ADTOFTranscriber:
     name: str = "adtof-pytorch"
     vocabulary: tuple[TranscriberDrumClass, ...] = _CLASS_AT_INDEX
 
-    def __init__(self, device: str | None = None) -> None:
+    def __init__(
+        self,
+        device: str | None = None,
+        thresholds: tuple[float, ...] | None = None,
+    ) -> None:
         self._device: str = device if device is not None else best_device()
         self._model: Any = None  # lazy
         self._processor: Any = None
+        self._thresholds: tuple[float, ...] = thresholds or _TUNED_THRESHOLDS
 
     def transcribe(self, drums: AudioBuffer) -> tuple[DrumHit, ...]:
         self._ensure_loaded()
@@ -95,7 +114,7 @@ class ADTOFTranscriber:
         for cls_idx, cls_name in enumerate(_CLASS_AT_INDEX):
             activation: NDArray[np.floating] = pred[0, :, cls_idx]
             picker = NotePeakPickingProcessor(
-                threshold=FRAME_RNN_THRESHOLDS[cls_idx],
+                threshold=self._thresholds[cls_idx],
                 fps=_MODEL_FPS,
             )
             for time_sec, _midi_placeholder in picker.process(activation):
