@@ -7,6 +7,8 @@ import {
   parsePosition,
   formatPosition,
   SCHEMA_CLASSES,
+  BAR_SVG_WIDTH,
+  BAR_SVG_HEIGHT,
   type RenderModel,
   type BarView,
   type SchemaDrumClass,
@@ -237,10 +239,11 @@ function resolveSixteenth(barView: BarView, x: number, maxSixteenth: number): nu
 }
 
 function toScreen(barView: BarView, x: number, y: number): { x: number; y: number } {
+  // x, y are viewBox (800×140) units; map back through the SVG's rendered scale.
   const rect = barView.svgHost.getBoundingClientRect();
   return {
-    x: rect.left + x - barView.svgHost.scrollLeft,
-    y: rect.top + y - barView.svgHost.scrollTop,
+    x: rect.left + (x / BAR_SVG_WIDTH) * rect.width,
+    y: rect.top + (y / BAR_SVG_HEIGHT) * rect.height,
   };
 }
 

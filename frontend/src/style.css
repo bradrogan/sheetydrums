@@ -1,59 +1,63 @@
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color-scheme: light;
+  /* Dark neon-graffiti theme. Black board, neon spray, crisp white score sheet. */
+  --paper: #0a0a12;
+  --panel: #16161f;
+  --ink: #f2f2fb; /* bright — text + hand-drawn outlines */
+  --ink-soft: #9a9ab5;
+  --crayon-red: #ff2e88; /* neon pink */
+  --crayon-blue: #2de2ff; /* neon cyan */
+  --crayon-green: #9dff3c; /* neon lime */
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-hand: "Patrick Hand", "Comic Sans MS", var(--font-body);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Asymmetric radii → hand-drawn rectangles. */
+  --wobble: 14px 8px 16px 6px / 8px 16px 6px 14px;
+  --wobble-lg: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  --sticker: 3px 3px 0 rgba(45, 226, 255, 0.85);
+  --sticker-sm: 2px 2px 0 rgba(45, 226, 255, 0.85);
+  font-family: var(--font-body);
+  color-scheme: dark;
 }
 
 body {
   margin: 2rem;
-  background: #fafafa;
-  color: #222;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+h1,
+h2,
+.section-title,
+.card-title,
+label,
+button {
+  font-family: var(--font-hand);
 }
 
 header h1 {
   margin: 0 0 1rem 0;
-  font-size: 1.5rem;
+  font-size: 2rem;
+  letter-spacing: 0.5px;
 }
 
 #meta {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  color: #555;
+  font-family: var(--font-mono);
+  color: var(--ink-soft);
 }
 
 .card {
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: var(--wobble-lg);
+  box-shadow: var(--sticker);
   padding: 1.25rem 1.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
   max-width: 720px;
 }
 
 .card h2 {
   margin: 0 0 1rem 0;
-  font-size: 1.05rem;
-}
-
-.tabs {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid #ddd;
-  margin-bottom: 1rem;
-}
-
-button.tab {
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 0.5rem 0.75rem;
-  font: inherit;
-  color: #666;
-  cursor: pointer;
-  border-radius: 0;
-}
-
-button.tab.active {
-  color: #222;
-  border-bottom-color: #222;
+  font-size: 1.35rem;
 }
 
 .form-pane {
@@ -70,8 +74,8 @@ button.tab.active {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.9rem;
-  color: #555;
+  font-size: 1rem;
+  color: var(--ink-soft);
 }
 
 .form-pane label.checkbox {
@@ -80,27 +84,59 @@ button.tab.active {
   gap: 0.5rem;
 }
 
-.form-pane input[type="file"],
-.form-pane input[type="url"] {
+input[type="url"],
+input[type="number"],
+input[type="text"] {
   font: inherit;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: white;
+  font-family: var(--font-body);
+  padding: 0.45rem 0.6rem;
+  border: 2px solid var(--ink);
+  border-radius: var(--wobble);
+  background: #10101a;
+  color: var(--ink);
 }
 
 button {
-  background: #222;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 0.5rem 1rem;
-  font: inherit;
+  background: var(--ink);
+  color: var(--paper);
+  border: 2.5px solid var(--ink);
+  border-radius: var(--wobble);
+  box-shadow: var(--sticker-sm);
+  padding: 0.4rem 0.9rem;
+  font-size: 1rem;
   cursor: pointer;
+  transition: transform 0.04s ease, box-shadow 0.04s ease, filter 0.1s ease;
 }
 
 button:hover {
-  background: #000;
+  filter: brightness(1.12);
+  box-shadow: 3px 3px 0 rgba(45, 226, 255, 0.9), 0 0 14px rgba(45, 226, 255, 0.55);
+}
+
+/* Press-down: the sticker "sits" on the paper. */
+button:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+button:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+}
+
+/* Primary call-to-action buttons get a crayon fill. */
+#pdf-btn,
+#url-form button[type="submit"] {
+  background: var(--crayon-blue);
+  color: #04121a;
+  border-color: var(--crayon-blue);
+}
+#save-btn {
+  background: var(--crayon-green);
+  color: #08160a;
+  border-color: var(--crayon-green);
 }
 
 #progress-log {
@@ -135,12 +171,26 @@ button:hover {
   gap: 0.5rem;
 }
 
+/* The score sits on a crisp white "sheet of paper" pinned to the board —
+   playful frame, but the engraving inside stays untouched and precise. */
 #score {
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 1rem;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  border-radius: var(--wobble);
+  box-shadow: var(--sticker);
+  padding: 1rem 1.25rem;
   margin-bottom: 1rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.3rem 0; /* bars on the same line touch — no horizontal gap */
+  align-content: start;
+}
+
+/* Two bars per line once the score column is wide enough for it. */
+@media (min-width: 1400px) {
+  #score {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .score-summary {
@@ -150,7 +200,11 @@ button:hover {
 }
 
 .bar-row {
-  margin-bottom: 0.5rem;
+  /* Leave a little gap above when the active bar is scrolled to the top. */
+  scroll-margin-top: 14px;
+  /* Let the grid cell shrink below the SVG's intrinsic 800px so bars scale
+     down to fit two-per-row instead of overflowing. */
+  min-width: 0;
 }
 
 .bar-label {
@@ -161,8 +215,17 @@ button:hover {
 }
 
 .bar-svg {
+  position: relative;
   width: 100%;
-  overflow: auto;
+  max-width: 800px; /* natural viewBox width — never upscale past it */
+}
+
+/* Scale the engraving to fit its column; overlays are % so they track it.
+   !important overrides the inline width VexFlow stamps on the <svg>. */
+.bar-svg svg {
+  width: 100% !important;
+  height: auto !important;
+  display: block;
 }
 
 details {
@@ -171,7 +234,7 @@ details {
 
 details summary {
   cursor: pointer;
-  color: #555;
+  color: var(--ink-soft);
   font-size: 0.9rem;
 }
 
@@ -192,24 +255,24 @@ header h1 a {
 }
 
 .muted {
-  color: #888;
+  color: var(--ink-soft);
   font-size: 0.85rem;
 }
 
 .section-title {
-  font-size: 1.05rem;
-  margin: 1.5rem 0 0.75rem 0;
+  font-size: 1.5rem;
+  margin: 1.75rem 0 0.9rem 0;
 }
 
 button.ghost {
   background: transparent;
-  color: #444;
-  border: 1px solid #ccc;
+  color: var(--ink);
+  border: 2.5px solid var(--ink);
 }
 
 button.ghost:hover {
-  background: #f0f0f0;
-  color: #000;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
 }
 
 /* === Projects list === */
@@ -222,17 +285,20 @@ button.ghost:hover {
 
 .project-card {
   position: relative;
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: var(--wobble);
+  box-shadow: var(--sticker);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: box-shadow 0.15s ease;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 
+/* Slight lift + wiggle on hover — like picking a sticker off the page. */
 .project-card:hover {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  transform: translate(-1px, -1px) rotate(-0.4deg);
+  box-shadow: 5px 5px 0 var(--ink);
 }
 
 .project-card .thumb {
@@ -249,9 +315,8 @@ button.ghost:hover {
 }
 
 .project-card .card-title {
-  font-weight: 600;
-  font-size: 0.95rem;
-  line-height: 1.3;
+  font-size: 1.15rem;
+  line-height: 1.2;
   cursor: pointer;
   margin-bottom: 0.35rem;
   display: -webkit-box;
@@ -275,6 +340,8 @@ button.ghost:hover {
   width: 1.6rem;
   height: 1.6rem;
   padding: 0;
+  border: none;
+  box-shadow: none;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.55);
   color: white;
@@ -334,7 +401,9 @@ button.ghost:hover {
   aspect-ratio: 16 / 9;
   width: 100%;
   background: #000;
-  border-radius: 6px;
+  border: 2.5px solid var(--ink);
+  border-radius: var(--wobble);
+  box-shadow: var(--sticker);
   overflow: hidden;
 }
 
@@ -353,7 +422,7 @@ button.ghost:hover {
   display: flex;
   gap: 1rem;
   font-size: 0.85rem;
-  color: #555;
+  color: var(--ink-soft);
   margin-bottom: 0.5rem;
 }
 .source-select label {
@@ -394,11 +463,9 @@ button.ghost:hover {
 }
 
 #loop-secs {
-  width: 3.5rem;
-  font: inherit;
+  width: 3.4rem;
+  text-align: center;
   padding: 0.25rem 0.35rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
 }
 
 .loop-ctl {
@@ -412,10 +479,21 @@ button.ghost:hover {
   flex: 1 1 auto;
 }
 
+/* Spray-painted poo drummer filling the blank space under the transport. */
+#poo-doodle {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+}
+#poo-doodle svg {
+  width: 82%;
+  max-width: 250px;
+  transform: rotate(-3deg);
+}
+
 button#edit-toggle.active {
-  background: #2d6cdf;
+  background: var(--crayon-blue);
   color: white;
-  border-color: #2d6cdf;
 }
 
 /* Edit mode: crosshair cursor over the score, subtle tint. */
@@ -423,29 +501,36 @@ button#edit-toggle.active {
   cursor: crosshair;
 }
 #score.editing {
-  outline: 2px dashed rgba(45, 108, 223, 0.4);
+  outline: 3px dashed var(--crayon-blue);
   outline-offset: 4px;
-  border-radius: 4px;
 }
 
 .edit-popover {
   position: fixed;
   z-index: 100;
-  background: white;
-  border: 1px solid #bbb;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: var(--wobble);
+  box-shadow: var(--sticker);
   padding: 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 .edit-popover select {
   font: inherit;
-  padding: 0.25rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  font-family: var(--font-body);
+  padding: 0.3rem;
+  border: 2px solid var(--ink);
+  border-radius: var(--wobble);
+  background: #10101a;
+  color: var(--ink);
+}
+/* Ensure the open dropdown list is legible too (dark theme). */
+.edit-popover select option {
+  background: #10101a;
+  color: var(--ink);
 }
 .edit-popover-row {
   display: flex;
@@ -453,19 +538,18 @@ button#edit-toggle.active {
 }
 .edit-popover-row button {
   padding: 0.3rem 0.55rem;
-  background: #eee;
-  color: #222;
+  background: #24242f;
+  color: var(--ink);
+  box-shadow: var(--sticker-sm);
 }
 .edit-popover-row button:hover {
-  background: #ddd;
+  background: #2e2e3c;
 }
 .edit-popover-row button.danger {
-  background: #c0392b;
-  color: white;
+  background: var(--crayon-red);
+  color: #1a0011;
+  border-color: var(--crayon-red);
   margin-left: auto;
-}
-.edit-popover-row button.danger:hover {
-  background: #a5281b;
 }
 
 /* Unsaved-changes modal (leaving edit mode). */
@@ -473,20 +557,23 @@ button#edit-toggle.active {
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(43, 43, 43, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .edit-modal {
-  background: white;
-  border-radius: 8px;
-  padding: 1.25rem 1.5rem;
-  max-width: 380px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: var(--wobble-lg);
+  box-shadow: 5px 5px 0 var(--ink);
+  padding: 1.4rem 1.6rem;
+  max-width: 400px;
 }
 .edit-modal p {
   margin: 0 0 1rem 0;
+  font-family: var(--font-hand);
+  font-size: 1.15rem;
 }
 .edit-modal-row {
   display: flex;
@@ -494,27 +581,29 @@ button#edit-toggle.active {
   justify-content: flex-end;
 }
 .edit-modal-row button.primary {
-  background: #2d6cdf;
+  background: var(--crayon-green);
+  color: #08160a;
+  border-color: var(--crayon-green);
 }
 .edit-modal-row button.danger {
-  background: #c0392b;
+  background: var(--crayon-red);
+  color: #1a0011;
+  border-color: var(--crayon-red);
 }
 .edit-modal-row button:not(.primary):not(.danger) {
-  background: #eee;
-  color: #222;
+  background: #24242f;
+  color: var(--ink);
 }
 
 /* === Playhead + note highlight (Phase 1) === */
 
-.bar-svg {
-  position: relative;
-}
-
 .playhead {
   position: absolute;
   top: 0;
+  bottom: 0;
   width: 2px;
-  background: #e74c3c;
+  background: var(--crayon-red);
+  box-shadow: 0 0 8px var(--crayon-red);
   pointer-events: none;
   display: none;
   z-index: 2;
@@ -527,7 +616,8 @@ button#edit-toggle.active {
 .note-highlight {
   position: absolute;
   top: 0;
-  background: rgba(231, 76, 60, 0.15);
+  bottom: 0;
+  background: rgba(255, 46, 136, 0.18);
   pointer-events: none;
   display: none;
   z-index: 1;
