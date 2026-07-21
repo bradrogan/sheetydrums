@@ -1,0 +1,43 @@
+sheetydrums — third-party components, credits, and licensing
+============================================================
+
+The source code in this repository is licensed under the MIT License (see
+LICENSE). However, the project relies on pretrained model weights that are
+downloaded at runtime and carry their own licenses. Two of them are
+NonCommercial, which makes the project **as a whole non-commercial**:
+
+Model weights
+-------------
+- ADTOF (drum transcription) — Zehren et al., Signals 2023.
+  Weights: CC-BY-NC-SA 4.0 (NonCommercial, ShareAlike, Attribution).
+  https://github.com/MZehren/ADTOF  (PyTorch port: adtof-pytorch)
+
+- DrumSep MDX23C (drum sub-stem separation) — jarredou / aufr33.
+  Weights: CC-BY-NC-SA 4.0 (NonCommercial, ShareAlike, Attribution).
+  Loaded via `audio-separator`.
+
+- Demucs v4 / htdemucs_ft (stem separation) — Meta AI. MIT.
+  https://github.com/facebookresearch/demucs
+
+- Beat This! (beat + downbeat tracking) — Foscarin, Schlüter, Widmer,
+  ISMIR 2024. MIT.  https://github.com/CPJKU/beat_this
+
+The two CC-BY-NC-SA weights are **not redistributed** in this repository;
+they are downloaded from their original sources on first run.
+
+Method credit
+-------------
+- The 5-class → richer-vocabulary expansion (open/closed hi-hat, ride/crash,
+  tom pitch) follows Cheuk et al., "Enhanced ADT via Drum Stem Source
+  Separation," arXiv:2509.24853 (ISMIR 2024 LBD).
+
+Libraries
+---------
+- VexFlow (music notation rendering) — MIT.
+- yt-dlp (audio fetching) — Unlicense / public domain.
+
+Practical summary
+-----------------
+Because ADTOF and DrumSep ship NonCommercial weights, do not use this project
+commercially. Attribute the above when redistributing. See docs/v2-backlog.md
+("Robustness & licensing") for the path to a commercially-clean pipeline.
