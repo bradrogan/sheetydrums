@@ -1,41 +1,56 @@
 """Pipeline factory: pick stage implementations from CLIConfig.
 
 The single point in the codebase that decides which concrete class implements
-each Protocol. When a real model wrapper lands (e.g. v2's sub-stem class
-expansion), the change is local to this file.
+each Protocol.
 """
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from sheetydrums.config import CLIConfig
 from sheetydrums.debug import DebugSink
 from sheetydrums.device import downstream_device
+from sheetydrums.interfaces import SubStemBranch
 from sheetydrums.pipeline import Pipeline
 from sheetydrums.stages import (
     ADTOFTranscriber,
     BeatThisTracker,
+    CheukExpander,
     DemucsSeparator,
+    DrumSepSeparator,
     StubQuantizer,
 )
 
 
-def build_pipeline(config: CLIConfig) -> Pipeline:
+def build_pipeline(
+    config: CLIConfig,
+    *,
+    on_progress: Callable[[str], None] | None = None,
+) -> Pipeline:
     """Construct a Pipeline wired with the implementations chosen by `config`.
 
-    Demucs gets the best available device (MPS on Apple Silicon). ADTOF and
-    Beat This! run on `downstream_device()` — explicitly CPU on Apple Silicon
-    to dodge the post-Demucs MPS state issue. See sheetydrums/device.py for
-    why. CPU is competitive for those small models, so the cost is minor.
+    Demucs and DrumSep each get the best available device (MPS on Apple Silicon).
+    ADTOF and Beat This! run on `downstream_device()` — explicitly CPU on Apple
+    Silicon to dodge the post-Demucs MPS state issue. See sheetydrums/device.py.
 
-    v1 ships without a sub-stem branch; the `SubStemBranch` slot on `Pipeline`
-    stays available for v2 work (see docs/v2-backlog.md → "5 → 7 class expansion").
+    `on_progress`, if given, is fed each stage's log line; independent of
+    `config.verbose` (which only controls stderr printing). The HTTP server
+    uses it to stream pipeline progress over SSE.
     """
-    downstream = downstream_device()
+    downstream: str = downstream_device()
+    substem_branch: SubStemBranch | None = None
+    if config.use_drumsep:
+        substem_branch = SubStemBranch(
+            separator=DrumSepSeparator(),
+            expander=CheukExpander(),
+        )
     return Pipeline(
         separator=DemucsSeparator(progress=config.verbose),
         transcriber=ADTOFTranscriber(device=downstream),
         beat_tracker=BeatThisTracker(device=downstream),
         quantizer=StubQuantizer(),
-        substem_branch=None,
+        substem_branch=substem_branch,
         debug_sink=DebugSink(config.debug_dir),
         verbose=config.verbose,
+        on_progress=on_progress,
     )

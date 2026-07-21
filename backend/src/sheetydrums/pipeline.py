@@ -8,6 +8,7 @@ pass `substem_branch=None`.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from sheetydrums.audio import AudioBuffer, load_audio
@@ -40,6 +41,7 @@ class Pipeline:
         substem_branch: SubStemBranch | None = None,
         debug_sink: DebugSink | None = None,
         verbose: bool = True,
+        on_progress: Callable[[str], None] | None = None,
     ) -> None:
         self._separator: MixSeparator = separator
         self._transcriber: DrumTranscriber = transcriber
@@ -48,8 +50,13 @@ class Pipeline:
         self._substem_branch: SubStemBranch | None = substem_branch
         self._debug: DebugSink = debug_sink if debug_sink is not None else DebugSink(None)
         self._verbose: bool = verbose
+        self._on_progress: Callable[[str], None] | None = on_progress
 
-    def transcribe(self, audio_path: Path) -> TranscriptionResult:
+    def transcribe(
+        self,
+        audio_path: Path,
+        drum_stem_path: Path | None = None,
+    ) -> TranscriptionResult:
         mix: AudioBuffer = load_audio(audio_path)
         self._log(f"loaded {audio_path.name}: {mix.duration_seconds:.2f}s @ {mix.sample_rate} Hz")
         self._debug.write_audio_placeholder("input-mix", mix)
@@ -57,6 +64,15 @@ class Pipeline:
         drums: AudioBuffer = self._separator.separate(mix)
         self._log(f"[separator:{self._separator.name}] drum stem: {drums.duration_seconds:.2f}s")
         self._debug.write_audio_placeholder(f"separator-{self._separator.name}", drums)
+
+        # Persist the isolated drum stem so the frontend can offer it as a
+        # drums-only playback source. Written before the (slower) downstream
+        # stages so it's available even if a later stage fails.
+        if drum_stem_path is not None:
+            from sheetydrums.audio import save_audio
+
+            save_audio(drum_stem_path, drums)
+            self._log(f"[stem] wrote drum stem → {drum_stem_path.name}")
 
         hits: tuple[DrumHit, ...] = self._transcriber.transcribe(drums)
         self._log(
@@ -70,10 +86,10 @@ class Pipeline:
 
         if self._substem_branch is not None:
             substems = self._substem_branch.separator.separate(drums)
-            self._log(f"[substem:{self._substem_branch.separator.name}] 5 sub-stems extracted")
+            self._log(f"[substem:{self._substem_branch.separator.name}] 6 sub-stems extracted")
             self._debug.write_text(
                 f"substem-{self._substem_branch.separator.name}",
-                "kick + snare + hihat + toms + cymbals sub-stems extracted",
+                "kick + snare + hihat + toms + ride + crash sub-stems extracted",
             )
 
             hits = self._substem_branch.expander.expand(hits, substems)
@@ -126,3 +142,5 @@ class Pipeline:
     def _log(self, msg: str) -> None:
         if self._verbose:
             print(f"  {msg}", file=sys.stderr)
+        if self._on_progress is not None:
+            self._on_progress(msg)

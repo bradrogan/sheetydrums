@@ -8,18 +8,24 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "adtof-pytorch",
+    "audio-separator[silicon]>=0.44.2",
     "beat-this>=1.1.0",
     "demucs>=4.0.1",
+    "fastapi>=0.115.0",
     "jsonschema>=4.26.0",
     "numpy>=2.4.6",
+    "onnxruntime>=1.26.0",
+    "python-multipart>=0.0.20",
     "scipy>=1.17.1",
     "soundfile>=0.13.1",
     "typer>=0.25.1",
+    "uvicorn>=0.32.0",
     "yt-dlp>=2026.3.17",
 ]
 
 [project.scripts]
 sheetydrums = "sheetydrums:main"
+sheetydrums-serve = "sheetydrums.server:main_serve"
 
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]

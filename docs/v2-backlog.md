@@ -30,6 +30,12 @@ Items explicitly out of scope for v1 that we want to revisit when the v1 pipelin
 
 A transcription is rarely perfect. v1 produces `events.json` and stops; v2 should let the user verify and correct against the drum-only audio.
 
+> **Status (2026-07):** much of this has since shipped in the web app — drum-stem
+> persistence + drums-only playback source, synced YouTube playback with a moving
+> playhead, click-to-seek, and loop-last-Xs. Manual edit affordances + save are in
+> progress ("Phase 2"). Edit history/undo and confidence-driven highlighting are
+> still open.
+
 - **Save the drum stem alongside `events.json`** — Demucs is already producing it; today we discard. Write it to `<output>.drums.wav` (or similar) so the frontend has something to play back. Cheap backend change: one file write in the separation stage's wrapper.
 - **Synced audio playback in the frontend** — load both `events.json` and `<output>.drums.wav`. Highlight the current bar / note as the audio plays. Smooth-scroll the score so the playhead stays in view.
 - **Click-to-seek** — clicking a note (or empty bar position) jumps audio playback to that time. Quick way to verify "does this hit really sound like a snare?"
@@ -39,6 +45,16 @@ A transcription is rarely perfect. v1 produces `events.json` and stops; v2 shoul
 - **Confidence-driven highlighting** — notes with low transcriber confidence rendered in a different color or with a `?` badge, so the user knows where to focus review effort.
 
 This is mostly a frontend project but implies two backend changes: (a) persist the drum stem from the separation stage, and (b) possibly emit a richer events.json that retains the raw onset times alongside the quantized positions, so edits can re-quantize without re-running the pipeline.
+
+## Adaptive tuning (AI-in-the-loop)
+
+Idea from Brad (2026-07): make the pipeline self-improving per song rather than relying on one static set of thresholds. Three connected pieces:
+
+- **Fully parameterize every stage** — expose all model/stage knobs behind a single typed `PipelineParams` object with sane defaults: ADTOF per-class peak thresholds (already constructor-configurable as of the detection-tuning work), Demucs model/shifts, DrumSep on/off, CheukExpander decay-ratio + spectral-centroid cut-offs and k-means params, quantizer subdivision, beat-tracker meter constraints. Persist the exact params used per project (in the project record) so every run is reproducible and cheaply re-runnable with tweaks.
+- **Post-transcription tuning chat** — after a transcription, let the user open a chat that can read the current params plus a summary of the output (per-class hit counts, confidence distribution, suspicious patterns like "ride dropping off-beats") and propose parameter changes, then re-run only the affected stages. The AI drives the parameter search the way we did by hand for the detection fix (e.g. "lower cymbal threshold 0.30 → 0.18, re-transcribe").
+- **Manual edits as ground truth** — treat the user's corrections (add / reclassify / delete / nudge from the editing UI) as labels. Feed them back so the tuner can (a) score candidate param sets by agreement with the corrected notes, and (b) re-attempt the transcription with params that would have reproduced the user's edits, propagating each fix to similar un-edited passages. Closes the loop: correct a few bars → the AI generalizes the fix across the whole song.
+
+Groundwork already in place: ADTOF thresholds are configurable; the project store + manual-edit/save path give a natural home for per-project params and an edit log. Strong precursor: the "richer events.json retaining raw onset times" note in the editing section above — re-quantizing / re-thresholding without re-running Demucs is what makes the tuning loop fast enough to be interactive.
 
 ## Notes for future-me
 
