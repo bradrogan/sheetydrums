@@ -1,10 +1,15 @@
 // Drives the on-score playhead + note highlight from a playback time, and turns
 // clicks on the score into seek times. Pure geometry over the RenderModel — no
 // knowledge of the player itself.
-import type { RenderModel, BarView } from './render';
+import { BAR_SVG_WIDTH, BAR_SVG_HEIGHT, type RenderModel, type BarView } from './render';
 
-/** px width of the highlight band drawn over the currently-sounding column. */
+/** highlight band width, in viewBox (800-wide) units. */
 const HIGHLIGHT_WIDTH = 18;
+
+/** viewBox-x → percentage of the (possibly scaled) bar width. */
+function pct(x: number): number {
+  return (x / BAR_SVG_WIDTH) * 100;
+}
 
 export class SyncController {
   private bars: BarView[];
@@ -38,22 +43,23 @@ export class SyncController {
       // Hide the previously-active bar's overlays and reveal this one's.
       if (this.activeIndex !== -1) hideOverlays(this.bars[this.activeIndex]!);
       this.activeIndex = idx;
-      bar.svgHost.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      // Pin the active bar near the top so the upcoming bars are visible ahead.
+      bar.row.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
 
     const f = clamp((t - bar.startSeconds) / (bar.endSeconds - bar.startSeconds), 0, 1);
     const x = bar.contentX0 + f * (bar.contentX1 - bar.contentX0);
 
-    bar.playhead.style.left = `${x}px`;
-    bar.playhead.style.height = `${bar.svgHeight}px`;
+    // Positions are expressed as a % of the viewBox width so overlays stay
+    // aligned when the SVG scales to fit its column (1 or 2 bars per row).
+    bar.playhead.style.left = `${pct(x)}%`;
     bar.playhead.classList.add('active');
 
     // Highlight the most recent note column at or before the playhead.
     const note = latestNoteBefore(bar, x);
     if (note) {
-      bar.highlight.style.left = `${note.xPx - HIGHLIGHT_WIDTH / 2}px`;
-      bar.highlight.style.width = `${HIGHLIGHT_WIDTH}px`;
-      bar.highlight.style.height = `${bar.svgHeight}px`;
+      bar.highlight.style.left = `${pct(note.xPx - HIGHLIGHT_WIDTH / 2)}%`;
+      bar.highlight.style.width = `${pct(HIGHLIGHT_WIDTH)}%`;
       bar.highlight.classList.add('active');
     } else {
       bar.highlight.classList.remove('active');
@@ -85,9 +91,11 @@ export class SyncController {
   }
 
   private handleClick(bar: BarView, e: MouseEvent): void {
+    // Convert the click from rendered pixels back into viewBox (800×140) units,
+    // accounting for however much the SVG is scaled to fit its column.
     const rect = bar.svgHost.getBoundingClientRect();
-    const x = e.clientX - rect.left + bar.svgHost.scrollLeft;
-    const y = e.clientY - rect.top + bar.svgHost.scrollTop;
+    const x = ((e.clientX - rect.left) / rect.width) * BAR_SVG_WIDTH;
+    const y = ((e.clientY - rect.top) / rect.height) * BAR_SVG_HEIGHT;
     if (this.editMode) {
       this.onEditClick(bar, x, y);
       return;

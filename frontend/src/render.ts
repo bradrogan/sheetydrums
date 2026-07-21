@@ -88,11 +88,13 @@ function gapToDuration(gapInSixteenths: number): string {
   return '16';
 }
 
-const BAR_SVG_WIDTH = 800;
-const BAR_SVG_HEIGHT = 140;
-const STAVE_X = 10;
+export const BAR_SVG_WIDTH = 800;
+export const BAR_SVG_HEIGHT = 140;
+// Stave spans the full viewBox width so adjacent bars (2-per-line, no CSS gap)
+// touch — the staff lines and barlines join like real measures.
+const STAVE_X = 0;
 const STAVE_Y = 30;
-const STAVE_WIDTH = 760;
+const STAVE_WIDTH = 800;
 
 /** One rendered note's geometry, keyed to its position in the bar. */
 export interface NoteView {
