@@ -189,12 +189,11 @@ urlForm.addEventListener('submit', async (e) => {
     return;
   }
 
-  const videoId = resp.video_id;
   activeSource = api.streamJob(resp.job_id, {
     onProgress: appendProgress,
     onResult: (project) => {
       activeSource = null;
-      navigate(`#/p/${encodeURIComponent(project.video_id ?? videoId)}`);
+      navigate(`#/p/${encodeURIComponent(project.video_id)}`);
     },
     onFailure: (error) => {
       activeSource = null;

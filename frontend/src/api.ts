@@ -55,7 +55,7 @@ export async function deleteProject(videoId: string): Promise<void> {
 // POST /transcribe returns either an already-stored project or a started job.
 export type TranscribeResponse =
   | { status: 'exists'; project: Project }
-  | { status: 'job'; job_id: string; video_id: string };
+  | { status: 'job'; job_id: string };
 
 export async function startTranscribe(
   url: string,

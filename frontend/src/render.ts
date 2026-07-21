@@ -511,21 +511,26 @@ function buildBarVoice(
     run = [];
   };
 
-  // Rest-value decomposition, largest first. Spans are ≤ one beat, so quarter
-  // is the largest rest we need; 3 → 8th + 16th (no dotted rests).
-  const restCodes: [number, string][] = [
-    [4, 'qr'],
-    [2, '8r'],
-    [1, '16r'],
-  ];
-  const emitRests = (from: number, to: number): void => {
+  // Metric rest decomposition: emit the largest standard rest that fits AND is
+  // aligned to its own value from the beat start (a value of size N must begin
+  // on a multiple of N). This keeps rests reading correctly — e.g. a silence
+  // from the "e" to the next beat renders 16th + 8th, not 8th + 16th.
+  const restCode: Record<number, string> = { 16: 'wr', 8: 'hr', 4: 'qr', 2: '8r', 1: '16r' };
+  const restSizes: number[] = [];
+  for (let s = sixteenthsPerBeat; s >= 1; s = Math.floor(s / 2)) restSizes.push(s);
+  const emitRests = (from: number, to: number, beatStart: number): void => {
     flush(); // a rest breaks any running beam
-    let n = to - from;
-    for (const [val, code] of restCodes) {
-      while (n >= val) {
-        tickables.push(restNote(code));
-        n -= val;
+    let pos = from;
+    while (pos < to) {
+      let size = 1;
+      for (const cand of restSizes) {
+        if (cand <= to - pos && (pos - beatStart) % cand === 0) {
+          size = cand;
+          break;
+        }
       }
+      tickables.push(restNote(restCode[size]!));
+      pos += size;
     }
   };
 
@@ -539,7 +544,7 @@ function buildBarVoice(
     let cursor = beatStart;
     for (let k = 0; k < slots.length; k++) {
       const s = slots[k]!;
-      if (s > cursor) emitRests(cursor, s);
+      if (s > cursor) emitRests(cursor, s, beatStart);
       const nextOnset = k + 1 < slots.length ? slots[k + 1]! : beatEnd;
       const dur16 = nextOnset - s;
       const hits = bySlot.get(s)!;
@@ -553,7 +558,7 @@ function buildBarVoice(
       if (isBeamable(code)) run.push(note);
       else flush();
     }
-    if (cursor < beatEnd) emitRests(cursor, beatEnd);
+    if (cursor < beatEnd) emitRests(cursor, beatEnd, beatStart);
     flush(); // beat boundary breaks the beam
   }
 

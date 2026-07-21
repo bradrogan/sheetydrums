@@ -51,6 +51,11 @@ class JobState:
 
 _jobs: dict[str, JobState] = {}
 
+# Cap on retained jobs; finished ones are evicted once we exceed this so the
+# in-memory map doesn't grow forever. Generous enough that a stream can still
+# reconnect to a recently-finished job.
+_MAX_JOBS: int = 32
+
 
 app: FastAPI = FastAPI(title="sheetydrums")
 # CORS open — local-dev server, never bound off 127.0.0.1. Vite dev proxies
@@ -108,57 +113,66 @@ async def transcribe(req: TranscribeRequest = Body(...)) -> dict[str, Any]:
         raise HTTPException(400, "Provide a YouTube `url`.")
 
     # Fast path: if we can parse the id and already have the project, skip the
-    # download + pipeline entirely.
+    # download + pipeline entirely (no job needed).
     parsed_id = youtube_id(url)
     if parsed_id is not None:
         existing = store.load_project(parsed_id)
         if existing is not None:
             return {"status": "exists", "project": existing}
 
-    # Download (also yields the authoritative video id + title). Cached URLs
-    # return near-instantly.
-    from sheetydrums.fetch import download_audio
-
-    try:
-        downloaded = await asyncio.to_thread(download_audio, url)
-    except Exception as exc:
-        raise HTTPException(400, f"Failed to fetch URL: {exc}") from exc
-
-    # The parsed id may have been None (or wrong) — re-check with yt-dlp's id.
-    existing = store.load_project(downloaded.video_id)
-    if existing is not None:
-        return {"status": "exists", "project": existing}
-
+    # Otherwise start a job immediately and return. The download runs on the
+    # worker thread (with streamed progress) rather than blocking this request —
+    # a fresh, uncached video can take a while to fetch. The frontend gets the
+    # authoritative video id from the project in the terminal `result` event.
     job_id: str = uuid.uuid4().hex
     job: JobState = JobState()
+    _prune_jobs()
     _jobs[job_id] = job
 
     threading.Thread(
         target=_run_job,
-        args=(job, downloaded, url, req.use_drumsep),
+        args=(job, url, req.use_drumsep),
         daemon=True,
     ).start()
 
-    return {"status": "job", "job_id": job_id, "video_id": downloaded.video_id}
+    return {"status": "job", "job_id": job_id}
 
 
-def _run_job(
-    job: JobState,
-    downloaded: Any,  # fetch.DownloadedAudio
-    url: str,
-    use_drumsep: bool,
-) -> None:
-    """Worker thread: transcribe, wrap in a project, persist it on the job."""
-    # Lazy import — pulls in torch / demucs / etc., which we don't want loading
-    # on the uvicorn startup path.
+def _prune_jobs() -> None:
+    """Evict finished jobs so `_jobs` doesn't grow without bound across runs.
+    Active (not-done) jobs are always kept."""
+    if len(_jobs) < _MAX_JOBS:
+        return
+    for job_id in [jid for jid, j in _jobs.items() if j.done]:
+        if len(_jobs) < _MAX_JOBS:
+            break
+        _jobs.pop(job_id, None)
+
+
+def _run_job(job: JobState, url: str, use_drumsep: bool) -> None:
+    """Worker thread: download, transcribe, wrap in a project, persist it."""
+    # Lazy import — pulls in torch / demucs / etc. (and yt-dlp), which we don't
+    # want loading on the uvicorn startup path.
     from sheetydrums.cli import serialize_to_schema
     from sheetydrums.config import CLIConfig
     from sheetydrums.factory import build_pipeline
+    from sheetydrums.fetch import download_audio
 
     def on_progress(msg: str) -> None:
         job.progress.put(msg)
 
     try:
+        on_progress("downloading audio…")
+        downloaded = download_audio(url)
+
+        # A non-parseable URL may still resolve to an already-transcribed video;
+        # short-circuit once we know the authoritative id.
+        existing = store.load_project(downloaded.video_id)
+        if existing is not None:
+            job.result = existing
+            on_progress("already transcribed — opening project")
+            return
+
         on_progress(f"loading pipeline (use_drumsep={use_drumsep})…")
         config: CLIConfig = CLIConfig(use_drumsep=use_drumsep, verbose=False)
         pipeline = build_pipeline(config, on_progress=on_progress)
