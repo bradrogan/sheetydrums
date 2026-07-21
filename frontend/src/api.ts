@@ -57,15 +57,12 @@ export type TranscribeResponse =
   | { status: 'exists'; project: Project }
   | { status: 'job'; job_id: string };
 
-export async function startTranscribe(
-  url: string,
-  useDrumsep: boolean,
-): Promise<TranscribeResponse> {
+export async function startTranscribe(url: string): Promise<TranscribeResponse> {
   const resp = await ok(
     await fetch('/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, use_drumsep: useDrumsep }),
+      body: JSON.stringify({ url }), // DrumSep is always on; backend defaults use_drumsep=true
     }),
   );
   return (await resp.json()) as TranscribeResponse;

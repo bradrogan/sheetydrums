@@ -3,6 +3,7 @@ import { createYouTubePlayer, type PlayerHandle } from './playback';
 import { createAudioPlayer } from './audioPlayer';
 import { SyncController } from './sync';
 import { setupEditing, editSession } from './edit';
+import { injectPoo } from './poo';
 import * as api from './api';
 import type { Project, ProjectSummary } from './api';
 
@@ -13,6 +14,9 @@ const progressSection = byId('progress-section');
 const projectSection = byId('project-section');
 const progressLog = byId('progress-log');
 const progressTitle = byId('progress-title');
+const progressSteps = byId('progress-steps');
+const progressBarFill = byId('progress-bar-fill');
+const progressDetail = byId('progress-detail');
 const urlForm = byId('url-form') as HTMLFormElement;
 const projectGrid = byId('project-grid');
 const emptyProjects = byId('empty-projects');
@@ -162,42 +166,126 @@ function renderCard(p: ProjectSummary): HTMLElement {
   return card;
 }
 
-// === New transcription ===
+// === New transcription + stepped progress ===
+
+// Pipeline stages shown as a checklist. Each maps to the backend log line(s)
+// that indicate it finished (messages are emitted after a stage completes),
+// so seeing a stage's keyword marks it — and everything before it — done, and
+// advances the next stage to "active".
+interface StepDef {
+  label: string;
+  doneWhen: string[];
+}
+
+function buildSteps(): StepDef[] {
+  return [
+    { label: 'Fetch audio from YouTube', doneWhen: ['loaded ', 'loading pipeline'] },
+    { label: 'Separate drums (Demucs)', doneWhen: ['[separator'] },
+    { label: 'Transcribe hits (ADTOF)', doneWhen: ['[transcriber'] },
+    { label: 'Split kit sub-stems (DrumSep)', doneWhen: ['[substem'] },
+    { label: 'Tell apart hi-hats, cymbals & toms', doneWhen: ['[expander'] },
+    { label: 'Track beats & tempo', doneWhen: ['[beats'] },
+    { label: 'Quantize to the grid', doneWhen: ['[quantizer'] },
+  ];
+}
+
+type StepStatus = 'pending' | 'active' | 'done' | 'failed';
+let stepDefs: StepDef[] = [];
+let stepEls: HTMLLIElement[] = [];
+let stepState: StepStatus[] = [];
+
+function renderSteps(defs: StepDef[]): void {
+  stepDefs = defs;
+  stepEls = [];
+  stepState = [];
+  progressSteps.innerHTML = '';
+  for (const def of defs) {
+    const li = document.createElement('li');
+    li.className = 'step';
+    li.dataset.status = 'pending';
+    const icon = document.createElement('span');
+    icon.className = 'step-icon';
+    const label = document.createElement('span');
+    label.className = 'step-label';
+    label.textContent = def.label;
+    li.append(icon, label);
+    progressSteps.appendChild(li);
+    stepEls.push(li);
+    stepState.push('pending');
+  }
+  if (defs.length) setStep(0, 'active');
+  updateBar();
+}
+
+function setStep(i: number, status: StepStatus): void {
+  stepState[i] = status;
+  stepEls[i]!.dataset.status = status;
+}
+
+function updateBar(): void {
+  const done = stepState.filter((s) => s === 'done').length;
+  progressBarFill.style.width = `${(done / Math.max(1, stepDefs.length)) * 100}%`;
+}
+
+function onProgressMsg(msg: string): void {
+  progressDetail.textContent = msg;
+  appendProgress(msg);
+  for (let i = stepDefs.length - 1; i >= 0; i--) {
+    if (stepDefs[i]!.doneWhen.some((k) => msg.includes(k))) {
+      for (let j = 0; j <= i; j++) if (stepState[j] !== 'done') setStep(j, 'done');
+      if (i + 1 < stepDefs.length && stepState[i + 1] === 'pending') setStep(i + 1, 'active');
+      updateBar();
+      break;
+    }
+  }
+}
+
+function allStepsDone(): void {
+  stepDefs.forEach((_, i) => setStep(i, 'done'));
+  updateBar();
+}
+
+function failActiveStep(): void {
+  const i = stepState.indexOf('active');
+  if (i >= 0) setStep(i, 'failed');
+}
 
 urlForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = (byId('audio-url') as HTMLInputElement).value.trim();
   if (!url) return;
-  const useDrumsep = (byId('url-drumsep') as HTMLInputElement).checked;
 
-  progressTitle.textContent = `Transcribing ${url}…`;
+  progressTitle.textContent = 'Transcribing…';
+  progressDetail.textContent = 'Submitting…';
   progressLog.textContent = '';
+  renderSteps(buildSteps());
   showOnly(progressSection);
-  appendProgress('Submitting…');
 
   let resp: api.TranscribeResponse;
   try {
-    resp = await api.startTranscribe(url, useDrumsep);
+    resp = await api.startTranscribe(url);
   } catch (err) {
-    appendProgress(`Failed to start: ${errMsg(err)}`);
+    failActiveStep();
+    progressDetail.textContent = `Failed to start: ${errMsg(err)}`;
     return;
   }
 
   if (resp.status === 'exists') {
-    appendProgress('Already transcribed — opening project.');
     navigate(`#/p/${encodeURIComponent(resp.project.video_id)}`);
     return;
   }
 
   activeSource = api.streamJob(resp.job_id, {
-    onProgress: appendProgress,
+    onProgress: onProgressMsg,
     onResult: (project) => {
       activeSource = null;
+      allStepsDone();
       navigate(`#/p/${encodeURIComponent(project.video_id)}`);
     },
     onFailure: (error) => {
       activeSource = null;
-      appendProgress(`Failed: ${error}`);
+      failActiveStep();
+      progressDetail.textContent = `Failed: ${error}`;
     },
   });
 });
@@ -209,7 +297,7 @@ cancelBtn.addEventListener('click', () => {
     activeSource.close();
     activeSource = null;
   }
-  appendProgress('(canceled — the backend job continues until it completes)');
+  progressDetail.textContent = 'Canceled — the backend job keeps running until it finishes.';
   navigate('#/');
 });
 
@@ -434,6 +522,10 @@ window.addEventListener('beforeunload', (e) => {
     e.returnValue = '';
   }
 });
+
+// Draw the poo drummer into its spots (project view + progress screen).
+injectPoo(byId('poo-doodle'), 'view');
+injectPoo(byId('progress-poo'), 'prog');
 
 window.addEventListener('hashchange', () => void onHashChange());
 void route();
