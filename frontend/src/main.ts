@@ -397,7 +397,17 @@ async function setupPlayback(
   // drum-stem audio element via bindPlayer().
   let active: PlayerHandle | null = null;
 
+  // Derive the label from the real player state rather than trusting each
+  // state-change event to arrive — YouTube's buffering→playing sequence can
+  // otherwise leave the button stuck on "Play". Called on every tick (while
+  // playing) and on state changes, so it self-heals.
+  const refreshPlayBtn = (): void => {
+    const label = active?.isPlaying() ? '❚❚ Pause' : '▶︎ Play';
+    if (playBtn.textContent !== label) playBtn.textContent = label;
+  };
+
   const handleTick = (t: number): void => {
+    refreshPlayBtn();
     // Loop enforcement: when past the region end, jump back to its start.
     if (loop.enabled && active && t >= loop.end - 0.02) {
       active.seekTo(loop.start);
@@ -412,9 +422,7 @@ async function setupPlayback(
   function bindPlayer(player: PlayerHandle): void {
     active = player;
     player.onTick(handleTick);
-    player.onStateChange((playing) => {
-      playBtn.textContent = playing ? '❚❚ Pause' : '▶︎ Play';
-    });
+    player.onStateChange(refreshPlayBtn);
     player.setVolume(Number(volume.value));
   }
 
