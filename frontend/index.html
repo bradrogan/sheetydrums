@@ -61,9 +61,11 @@
               <div class="source-select" id="source-select">
                 <label><input type="radio" name="source" value="youtube" checked /> YouTube (full mix)</label>
                 <label><input type="radio" name="source" value="stem" /> Drums only</label>
+                <label><input type="radio" name="source" value="drumless" /> No drums</label>
               </div>
               <div id="player"></div>
               <audio id="stem-audio" preload="none"></audio>
+              <audio id="drumless-audio" preload="none"></audio>
               <div id="transport">
                 <div class="transport-row">
                   <button type="button" id="back10-btn" title="Back 10 seconds" disabled>⏪&nbsp;10s</button>

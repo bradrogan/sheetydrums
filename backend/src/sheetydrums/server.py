@@ -179,6 +179,7 @@ def _run_job(job: JobState, url: str, use_drumsep: bool) -> None:
         result = pipeline.transcribe(
             downloaded.path,
             drum_stem_path=store.stem_path(downloaded.video_id),
+            drumless_path=store.drumless_path(downloaded.video_id),
         )
         notation: dict[str, Any] = serialize_to_schema(result)
         project: dict[str, Any] = store.save_project(
@@ -256,8 +257,12 @@ async def get_project(video_id: str) -> dict[str, Any]:
     project = store.load_project(video_id)
     if project is None:
         raise HTTPException(404, f"No project for video_id {video_id!r}")
-    # Runtime-only flag (not persisted): whether the drums-only stem is available.
-    return {**project, "has_stem": store.has_stem(video_id)}
+    # Runtime-only flags (not persisted): which alternate audio tracks exist.
+    return {
+        **project,
+        "has_stem": store.has_stem(video_id),
+        "has_drumless": store.has_drumless(video_id),
+    }
 
 
 @app.get("/projects/{video_id}/drums.wav")
@@ -266,6 +271,15 @@ async def get_drum_stem(video_id: str) -> FileResponse:
     path = store.stem_path(video_id)
     if not path.exists():
         raise HTTPException(404, "No drum stem for this project.")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@app.get("/projects/{video_id}/drumless.wav")
+async def get_drumless(video_id: str) -> FileResponse:
+    """Serve the drumless backing track (mix minus drums)."""
+    path = store.drumless_path(video_id)
+    if not path.exists():
+        raise HTTPException(404, "No drumless track for this project.")
     return FileResponse(path, media_type="audio/wav")
 
 

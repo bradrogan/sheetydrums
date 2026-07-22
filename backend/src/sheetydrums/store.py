@@ -45,6 +45,17 @@ def has_stem(video_id: str) -> bool:
     return stem_path(video_id).exists()
 
 
+def drumless_path(video_id: str) -> Path:
+    """Path to a project's drumless backing-track WAV (may not exist yet)."""
+    if "/" in video_id or "\\" in video_id or video_id in ("", ".", ".."):
+        raise ValueError(f"Invalid video_id: {video_id!r}")
+    return _STORE_DIR / f"{video_id}.drumless.wav"
+
+
+def has_drumless(video_id: str) -> bool:
+    return drumless_path(video_id).exists()
+
+
 def load_project(video_id: str) -> dict[str, Any] | None:
     """Return the full project dict, or None if it doesn't exist."""
     path = _path_for(video_id)

@@ -310,11 +310,13 @@ function appendProgress(msg: string): void {
 
 let currentPlayer: PlayerHandle | null = null;
 let currentStemPlayer: PlayerHandle | null = null;
+let currentDrumlessPlayer: PlayerHandle | null = null;
 
 function teardownPlayer(): void {
-  for (const p of [currentPlayer, currentStemPlayer]) p?.destroy();
+  for (const p of [currentPlayer, currentStemPlayer, currentDrumlessPlayer]) p?.destroy();
   currentPlayer = null;
   currentStemPlayer = null;
+  currentDrumlessPlayer = null;
 }
 
 async function showProject(videoId: string): Promise<void> {
@@ -426,32 +428,52 @@ async function setupPlayback(
   currentPlayer = ytPlayer;
   bindPlayer(ytPlayer);
 
-  // Drums-only source: only offered when the stem WAV exists for this project.
-  const stemRadio = document.querySelector<HTMLInputElement>('input[name="source"][value="stem"]');
-  const ytRadio = document.querySelector<HTMLInputElement>('input[name="source"][value="youtube"]');
-  let stemPlayer: PlayerHandle | null = null;
+  // Alternate audio sources — offered only when the backend has the track.
+  //   stem     = isolated drums (drums.wav)
+  //   drumless = backing track, mix minus drums (drumless.wav)
+  type Source = 'youtube' | 'stem' | 'drumless';
+  const radio = (v: Source): HTMLInputElement | null =>
+    document.querySelector<HTMLInputElement>(`input[name="source"][value="${v}"]`);
+  const audioPlayers: Partial<Record<Source, PlayerHandle>> = {};
 
   // The radios are shared DOM that persists across navigation, so reset the
-  // selector to YouTube for each project — otherwise a prior "Drums only"
-  // choice sticks even though playback restarted on the full mix.
-  const hasStem = !!project.has_stem;
-  if (ytRadio) ytRadio.checked = true;
-  if (stemRadio) {
-    stemRadio.checked = false;
-    stemRadio.disabled = !hasStem;
-    stemRadio.closest('label')?.classList.toggle('disabled', !hasStem);
+  // selector to YouTube for each project — otherwise a prior pick sticks even
+  // though playback restarted on the full mix.
+  const avail: Record<Source, boolean> = {
+    youtube: true,
+    stem: !!project.has_stem,
+    drumless: !!project.has_drumless,
+  };
+  for (const kind of ['youtube', 'stem', 'drumless'] as Source[]) {
+    const el = radio(kind);
+    if (!el) continue;
+    el.checked = kind === 'youtube';
+    el.disabled = !avail[kind];
+    el.closest('label')?.classList.toggle('disabled', !avail[kind]);
   }
 
-  function switchSource(kind: 'youtube' | 'stem'): void {
-    const from = active;
-    if (kind === 'stem' && !stemPlayer) {
-      stemPlayer = createAudioPlayer(
-        byId('stem-audio') as HTMLAudioElement,
-        `/projects/${encodeURIComponent(videoId)}/drums.wav`,
-      );
-      currentStemPlayer = stemPlayer;
+  const audioUrl: Record<Exclude<Source, 'youtube'>, string> = {
+    stem: `/projects/${encodeURIComponent(videoId)}/drums.wav`,
+    drumless: `/projects/${encodeURIComponent(videoId)}/drumless.wav`,
+  };
+  const audioEl: Record<Exclude<Source, 'youtube'>, string> = {
+    stem: 'stem-audio',
+    drumless: 'drumless-audio',
+  };
+
+  function playerFor(kind: Source): PlayerHandle {
+    if (kind === 'youtube') return ytPlayer;
+    if (!audioPlayers[kind]) {
+      audioPlayers[kind] = createAudioPlayer(byId(audioEl[kind]) as HTMLAudioElement, audioUrl[kind]);
+      if (kind === 'stem') currentStemPlayer = audioPlayers[kind]!;
+      else currentDrumlessPlayer = audioPlayers[kind]!;
     }
-    const next = kind === 'stem' ? stemPlayer! : ytPlayer;
+    return audioPlayers[kind]!;
+  }
+
+  function switchSource(kind: Source): void {
+    const from = active;
+    const next = playerFor(kind);
     if (next === from) return;
     const wasPlaying = from?.isPlaying() ?? false;
     const t = from?.getCurrentTime() ?? 0;
@@ -460,10 +482,13 @@ async function setupPlayback(
     next.seekTo(t);
     if (wasPlaying) next.play();
   }
+
   // Assign (not addEventListener) so re-opening a project replaces the handler
   // rather than stacking stale ones bound to already-destroyed players.
-  if (stemRadio) stemRadio.onchange = () => { if (stemRadio.checked) switchSource('stem'); };
-  if (ytRadio) ytRadio.onchange = () => { if (ytRadio.checked) switchSource('youtube'); };
+  for (const kind of ['youtube', 'stem', 'drumless'] as Source[]) {
+    const el = radio(kind);
+    if (el) el.onchange = () => { if (el.checked) switchSource(kind); };
+  }
 
   // Enable controls.
   for (const btn of [playBtn, back10, fwd10]) btn.disabled = false;
