@@ -430,9 +430,16 @@ async function setupPlayback(
   const stemRadio = document.querySelector<HTMLInputElement>('input[name="source"][value="stem"]');
   const ytRadio = document.querySelector<HTMLInputElement>('input[name="source"][value="youtube"]');
   let stemPlayer: PlayerHandle | null = null;
-  if (!project.has_stem && stemRadio) {
-    stemRadio.disabled = true;
-    stemRadio.closest('label')?.classList.add('disabled');
+
+  // The radios are shared DOM that persists across navigation, so reset the
+  // selector to YouTube for each project — otherwise a prior "Drums only"
+  // choice sticks even though playback restarted on the full mix.
+  const hasStem = !!project.has_stem;
+  if (ytRadio) ytRadio.checked = true;
+  if (stemRadio) {
+    stemRadio.checked = false;
+    stemRadio.disabled = !hasStem;
+    stemRadio.closest('label')?.classList.toggle('disabled', !hasStem);
   }
 
   function switchSource(kind: 'youtube' | 'stem'): void {
@@ -453,8 +460,10 @@ async function setupPlayback(
     next.seekTo(t);
     if (wasPlaying) next.play();
   }
-  stemRadio?.addEventListener('change', () => stemRadio.checked && switchSource('stem'));
-  ytRadio?.addEventListener('change', () => ytRadio.checked && switchSource('youtube'));
+  // Assign (not addEventListener) so re-opening a project replaces the handler
+  // rather than stacking stale ones bound to already-destroyed players.
+  if (stemRadio) stemRadio.onchange = () => { if (stemRadio.checked) switchSource('stem'); };
+  if (ytRadio) ytRadio.onchange = () => { if (ytRadio.checked) switchSource('youtube'); };
 
   // Enable controls.
   for (const btn of [playBtn, back10, fwd10]) btn.disabled = false;
