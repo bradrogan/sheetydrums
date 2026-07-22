@@ -59,6 +59,25 @@ def save_audio(path: Path, buffer: AudioBuffer) -> None:
     sf.write(str(path), buffer.samples, buffer.sample_rate, subtype="PCM_16")
 
 
+def subtract_stem(mix: AudioBuffer, stem: AudioBuffer) -> AudioBuffer:
+    """Return `mix - stem` — e.g. the drumless backing track (mix minus the
+    isolated drums). Coerces both to stereo and trims to the shorter length so
+    a mono mix and a stereo Demucs stem line up."""
+    def _stereo(a: NDArray[np.floating]) -> NDArray[np.floating]:
+        if a.ndim == 1:
+            return np.stack([a, a], axis=1)
+        if a.shape[1] == 1:
+            return np.concatenate([a, a], axis=1)
+        return a
+
+    m = _stereo(mix.samples)
+    s = _stereo(stem.samples)
+    n = min(m.shape[0], s.shape[0])
+    ch = min(m.shape[1], s.shape[1])
+    out = (m[:n, :ch] - s[:n, :ch]).astype(np.float32)
+    return AudioBuffer(samples=out, sample_rate=mix.sample_rate)
+
+
 def _resample(
     samples: NDArray[np.floating],
     src_rate: int,

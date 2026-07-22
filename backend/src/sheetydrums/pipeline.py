@@ -56,6 +56,7 @@ class Pipeline:
         self,
         audio_path: Path,
         drum_stem_path: Path | None = None,
+        drumless_path: Path | None = None,
     ) -> TranscriptionResult:
         mix: AudioBuffer = load_audio(audio_path)
         self._log(f"loaded {audio_path.name}: {mix.duration_seconds:.2f}s @ {mix.sample_rate} Hz")
@@ -73,6 +74,13 @@ class Pipeline:
 
             save_audio(drum_stem_path, drums)
             self._log(f"[stem] wrote drum stem → {drum_stem_path.name}")
+
+        # Drumless backing track (mix minus drums) — play your own drums over it.
+        if drumless_path is not None:
+            from sheetydrums.audio import save_audio, subtract_stem
+
+            save_audio(drumless_path, subtract_stem(mix, drums))
+            self._log(f"[stem] wrote drumless mix → {drumless_path.name}")
 
         hits: tuple[DrumHit, ...] = self._transcriber.transcribe(drums)
         self._log(

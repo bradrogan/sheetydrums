@@ -414,7 +414,8 @@ button.ghost:hover {
   display: block;
 }
 
-#stem-audio {
+#stem-audio,
+#drumless-audio {
   display: none;
 }
 

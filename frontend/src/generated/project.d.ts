@@ -40,6 +40,10 @@ export interface DrumProjectV1 {
    * Runtime-only flag on GET responses (not persisted): whether the isolated drum-stem WAV exists for drums-only playback.
    */
   has_stem?: boolean;
+  /**
+   * Runtime-only flag on GET responses (not persisted): whether the drumless backing-track WAV (mix minus drums) exists.
+   */
+  has_drumless?: boolean;
 }
 /**
  * The drum transcription — the events.json contract, unchanged.
