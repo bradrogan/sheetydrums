@@ -121,6 +121,8 @@ export interface BarView {
   contentX1: number;
   svgHeight: number;
   notes: NoteView[];
+  /** Bar length in whole notes (num/den) — normalizes note positions to 0..1. */
+  barWholeNotes: number;
   /** In grid (edit) mode: x of every 16th slot 0..maxSixteenth, for snapping. */
   gridXs?: number[];
   /** Whether this bar drew the clef + time signature (the first bar). */
@@ -213,6 +215,8 @@ function makeBarView(
   svgHost.className = 'bar-svg';
   row.appendChild(svgHost);
 
+  const [num, den] = timeSig.split('/').map(Number);
+
   return {
     index,
     startSeconds,
@@ -225,6 +229,7 @@ function makeBarView(
     contentX1: STAVE_X + STAVE_WIDTH,
     svgHeight: BAR_SVG_HEIGHT,
     notes: [],
+    barWholeNotes: (num ?? 4) / (den ?? 4),
     showClef,
     timeSig,
   };

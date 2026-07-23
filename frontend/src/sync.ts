@@ -48,7 +48,7 @@ export class SyncController {
     }
 
     const f = clamp((t - bar.startSeconds) / (bar.endSeconds - bar.startSeconds), 0, 1);
-    const x = bar.contentX0 + f * (bar.contentX1 - bar.contentX0);
+    const x = playheadX(bar, f);
 
     // Positions are expressed as a % of the viewBox width so overlays stay
     // aligned when the SVG scales to fit its column (1 or 2 bars per row).
@@ -104,6 +104,28 @@ export class SyncController {
     const t = bar.startSeconds + f * (bar.endSeconds - bar.startSeconds);
     this.onSeek(t);
   }
+}
+
+/**
+ * Map a bar-fraction f (0..1 of the bar's duration) to an x, anchored to the
+ * actual note x-positions so the playhead lands ON each notehead at its moment.
+ * VexFlow spaces notes musically (non-linear), so a straight linear-in-time
+ * mapping visibly drifts from the noteheads; interpolating between the captured
+ * note positions keeps them in sync. Endpoints anchor to the bar's edges.
+ */
+function playheadX(bar: BarView, f: number): number {
+  const lerp = (x0: number, y0: number, x1: number, y1: number, x: number): number =>
+    x1 === x0 ? y0 : y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+
+  let prevF = 0;
+  let prevX = bar.contentX0;
+  for (const note of bar.notes) {
+    const nf = bar.barWholeNotes > 0 ? note.position / bar.barWholeNotes : 0;
+    if (f <= nf) return lerp(prevF, prevX, nf, note.xPx, f);
+    prevF = nf;
+    prevX = note.xPx;
+  }
+  return lerp(prevF, prevX, 1, bar.contentX1, f);
 }
 
 function latestNoteBefore(bar: BarView, x: number): BarView['notes'][number] | null {
