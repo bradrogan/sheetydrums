@@ -312,11 +312,18 @@ let currentPlayer: PlayerHandle | null = null;
 let currentStemPlayer: PlayerHandle | null = null;
 let currentDrumlessPlayer: PlayerHandle | null = null;
 
+// Keyboard transport target for the project view — set while a player is mounted,
+// closed over the live `active` player so it follows source switches. The global
+// keydown listener (see boot) is a no-op when this is null (list/progress views).
+let activeTransport: { toggle: () => void; skip: (delta: number) => void } | null = null;
+const KEY_SKIP_SECONDS = 5;
+
 function teardownPlayer(): void {
   for (const p of [currentPlayer, currentStemPlayer, currentDrumlessPlayer]) p?.destroy();
   currentPlayer = null;
   currentStemPlayer = null;
   currentDrumlessPlayer = null;
+  activeTransport = null;
 }
 
 async function showProject(videoId: string): Promise<void> {
@@ -507,6 +514,13 @@ async function setupPlayback(
   back10.onclick = () => active?.seekBy(-10);
   fwd10.onclick = () => active?.seekBy(10);
 
+  // Expose the transport to the global keyboard handler. Reads `active` live so
+  // space/←/→ always drive whichever source is currently selected.
+  activeTransport = {
+    toggle: () => active?.toggle(),
+    skip: (delta) => active?.seekBy(delta),
+  };
+
   const armLoop = (): void => {
     // Loop the X seconds ending at the current position.
     const end = active ? active.getCurrentTime() : 0;
@@ -562,6 +576,27 @@ window.addEventListener('beforeunload', (e) => {
   if (editSession.dirty) {
     e.preventDefault();
     e.returnValue = '';
+  }
+});
+
+// Keyboard transport for the project view: Space = play/pause, ←/→ = skip.
+// Active only while a project player is mounted (activeTransport set). Ignores
+// keystrokes aimed at form fields so inputs keep normal behavior; preventDefault
+// stops Space from scrolling the page (or double-firing a focused button).
+window.addEventListener('keydown', (e) => {
+  if (!activeTransport || e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = e.target as HTMLElement | null;
+  const tag = el?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    activeTransport.toggle();
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    activeTransport.skip(-KEY_SKIP_SECONDS);
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    activeTransport.skip(KEY_SKIP_SECONDS);
   }
 });
 
