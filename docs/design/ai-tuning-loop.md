@@ -21,7 +21,8 @@ Design decisions locked with the user (2026-08):
 - **Parameterize every knob that meaningfully affects transcription quality** (full catalog below).
 - **Local, open-source LLM** so the feature is free to run for the user (no per-call cost).
 - **Suggestion = LLM + automated parameter search scored against the user's edits** (LLM narrows the space; search guarantees improvement).
-- **Interaction is correct-by-example (approach B), only.** The user hand-fixes a spot in edit mode; a **"Fix the rest of the song for this"** action generalises that correction across the whole song. No complaint text box, chips, or per-selection prompts in v1 — those (approaches A/C from the interface critique) can be layered on later if a correction is ever awkward to express as a single edit.
+- **Interaction is correct-by-example (approach B), only.** The user makes corrections *inside a declared selection* (an instrument lane × bar range) and marks it **verified**; a **"Fix the rest of the song for this"** action generalises it across the whole song. No complaint text box, chips, or per-selection prompts in v1 — those (approaches A/C from the interface critique) can be layered on later if a correction is ever awkward to express as an edit.
+- **Corrections live inside a verified selection, not on loose notes.** A verified selection is a *closed-world, fully-labelled patch*: every note in it is ground truth — the ones the user changed **and** the ones they left. That gives the search both positive and negative labels over a bounded region, so "reproduce this" is unambiguous (a lone note edit is a single positive label — ill-posed to generalise from). A single-note selection is allowed but treated as a weak signal; the UI nudges the user to select the range they actually verified.
 - **Edit provenance is two-layer with strict precedence.** Every change is tagged `user` or `system` (a "fix the rest" pass). **User edits are inviolable; system edits are replaceable.** A system pass never overwrites a user edit; a later system pass supersedes the earlier one. A "fix the rest" pass is previewed as a delta and committed only on the user's OK.
 
 Provisional (revisit during build):
@@ -40,9 +41,9 @@ What already exists and is reusable:
 
 ```
         ┌─────────────────────────── score view (frontend, edit mode) ────────────────┐
-        │  hand-fix one spot (user edit) ──▶ "Fix the rest of the song for this"        │
+        │  select lane×bars, correct + mark VERIFIED ──▶ "Fix the rest of the song"     │
         └───────────────┬──────────────────────────────────────────────────────────────┘
-                        │ {correction (edit ops), project_id}
+                        │ {verified selection (labelled patch), project_id}
                         ▼
    ┌────────────────────────────────────────────────────────────────────────┐
    │ "Fix the rest" pass                                                      │
@@ -172,25 +173,34 @@ grid depends on `transcription` params too — encode that edge in the DAG.
 
 The only v1 interaction (approach B from the interface critique; A/C deferred):
 
-1. In **edit mode**, the user hand-corrects one spot with the existing `edit.ts`
-   affordances (e.g. reclassify bars 89–100 hi-hats closed→open). That's a
-   **user edit** (block 6 provenance).
-2. A launcher in the bottom-left slot (replacing the `#poo-doodle` while in edit
-   mode) surfaces **"Fix the rest of the song for this"**, scoped to the
-   correction just made — its instrument lane and the kind of change.
-3. That runs the edit-scored search (block 5) with the user's edit(s) as the
-   ground-truth objective, finds the params/labels that reproduce the correction,
-   and applies the same fix to the rest of the song as **system edits**.
-4. The result is shown as a **preview delta** (block 6 → "Seeing the delta")
+1. In **edit mode**, the user makes a **selection** — an instrument lane × bar
+   range (e.g. the hi-hat lane, bars 89–100), adjustable on both edges.
+2. They correct the notes inside it with the existing `edit.ts` affordances (or
+   leave already-correct notes as-is) and mark the selection **verified**. The
+   whole verified selection is a **user edit** (block 6 provenance) — a
+   closed-world, fully-labelled patch: every note in it is ground truth, the ones
+   they changed *and* the ones they left.
+3. A launcher in the bottom-left slot (replacing the `#poo-doodle` while in edit
+   mode) surfaces **"Fix the rest of the song for this"**, scoped to the verified
+   selection — its instrument lane and the pattern it exhibits.
+4. That runs the edit-scored search (block 5) with the verified selection as the
+   ground-truth objective, finds the params/labels that reproduce it, and applies
+   the same fix to similar passages elsewhere as **system edits**.
+5. The result is shown as a **preview delta** (block 6 → "Seeing the delta")
    before commit; the user OKs or discards.
 
+**Why a selection, not a loose note.** A single note edit is one *positive* label
+— ambiguous to generalise from (what's the scope? which nearby notes are
+correctly *un*-changed?). A verified selection carries both positive and negative
+labels over a bounded region, so "reproduce this" is well-posed and the search can
+learn the pattern in context ("offbeats open, downbeats closed *here*") instead of
+overfitting one note. A single-note selection is allowed but is a weak signal; the
+UI nudges toward selecting the range actually verified.
+
 There is no free-text complaint box, chips, or per-selection prompt in v1 — the
-correction itself is the input, so there is nothing to type or bind. The
-correction still **scopes** the diagnostics (block 3) and the search objective
-(block 5): "generalise *this* hi-hat open/closed change", not a whole-song reword.
-(If corrections ever arise that are awkward to express as a single edit — "it's
-dropping the ride on every off-beat" — the chip-based chat from the interface
-critique can be added as approach A/C.)
+verified selection *is* the input, so there is nothing to type or bind. (If
+corrections ever arise that are awkward to express as an edit — "it's dropping the
+ride on every off-beat" — the chip-based chat can be added as approach A/C.)
 
 ## Building block 5 — suggestion = local LLM + edit-scored param search
 
@@ -207,11 +217,12 @@ Output is constrained to a JSON schema (grammar-constrained decoding) so parsing
 **(b) Automated search verifies + optimises.** Over just those knobs, run a small search (coordinate descent / a coarse grid, then local refine; ≤ ~20–40 candidates). Each candidate:
 1. sets params, re-runs only the affected stages (cheap, cached upstream),
 2. scores the resulting notation against the **objective** — agreement with the
-   user's correction, treated as labels and matched with the eval harness's
-   bipartite matcher: (i) it must **reproduce** the corrected spot, and (ii) a
-   coverage term rewards applying the same change to *similar* passages elsewhere
-   (that's the "fix the rest" generalisation). The corrected spot is always
-   present as ground truth, so there is no cold-start.
+   **verified selection**, whose every note (changed and unchanged) is a label,
+   matched with the eval harness's bipartite matcher: (i) it must **reproduce**
+   the whole selection (both the positive and negative labels — so it can't just
+   flip everything), and (ii) a coverage term rewards applying the same pattern to
+   *similar* passages elsewhere (the "fix the rest" generalisation). The verified
+   selection is always present as ground truth, so there is no cold-start.
 3. keep the best-scoring candidate.
 
 Return the best params + a before/after preview. Because every candidate eval is a
@@ -249,14 +260,15 @@ take-the-fresh-generation-clean.
 ### Edit provenance & precedence (user vs system)
 
 Every op carries an `origin`:
-- `user` — a manual edit. **Inviolable**, highest precedence, accumulates and persists.
+- `user` — a manual edit inside a **verified selection**. **Inviolable**, highest precedence, accumulates and persists. A verified selection locks its *entire* lane × bar range as user-owned (not just the touched notes) — a clean precedence boundary: a system pass may not write anywhere inside a verified region.
 - `system` — applied by a "fix the rest of the song" pass. **Replaceable**, tagged with the `pass_id` that produced it.
 
 Effective notation is layered **base generation → system layer → user layer** (user
 applied last, so it always wins). Directly from the locked requirements:
-- **A system pass never writes to a position a user edit owns.** User-owned anchors
-  are locked and excluded before the pass applies. (They're also the ground truth
-  the pass is reproducing, so it should agree there regardless.)
+- **A system pass never writes inside a verified selection.** The whole lane × bar
+  range of every verified selection is user-owned and excluded before the pass
+  applies. (It's also the ground truth the pass reproduces, so it should agree
+  there regardless.)
 - **A later system pass supersedes the earlier one.** Each "fix the rest" pass
   recomputes the *whole* system layer from the current base + user edits and
   replaces the previous system layer wholesale (keyed by `pass_id`) — system edits
@@ -303,26 +315,28 @@ Tradeoffs: first pull is a few GB; Metal inference is slower than a hosted front
 
 ## UX flow
 
-1. In edit mode, the user hand-fixes one spot (e.g. bars 89–100 hi-hats → open). The bottom-left slot (where the poo-doodle sits) shows **"Fix the rest of the song for this."**
-2. Clicking it runs the edit-scored search (block 5) with that correction as ground truth, then shows a **preview delta** — every note it would change, in the *system* colour, distinct from *user* edits and untouched notes.
+1. In edit mode, the user selects a lane × bar range (e.g. hi-hat, bars 89–100), corrects the notes inside it, and marks it **verified**. The bottom-left slot (where the poo-doodle sits) shows **"Fix the rest of the song for this."**
+2. Clicking it runs the edit-scored search (block 5) with the verified selection as ground truth, then shows a **preview delta** — every note it would change, in the *system* colour, distinct from *user* edits and untouched notes.
 3. `[Apply]` commits the pass as a **system layer** (replaceable) / `[Discard]` drops it. User edits are never touched.
 4. Iterate: fix another spot → "fix the rest" again. The new pass **supersedes** the previous system layer; user edits persist and stay locked.
 5. Each committed state is a version (block 7); the change log lists user edits and system passes separately.
 
 ## Data-model changes (project record)
 
-Add to each project JSON: `params` (block 1); an `edits` op log (block 6) where each
-op carries `origin: "user" | "system"` (system ops also carry the `pass_id` that
-produced them); and `versions` (block 7). Stage-cache artifacts live under
+Add to each project JSON: `params` (block 1); the user layer as a list of
+**verified selections** (each a lane × bar range + the corrected notes inside it —
+these lock their region and are the search's ground truth); a `system` layer of
+ops tagged with the `pass_id` that produced them (block 6); and `versions`
+(block 7). Stage-cache artifacts live under
 `~/.cache/sheetydrums/projects/<video_id>/stages/`. Effective notation is derived by
-layering base → system (latest pass) → user.
+layering base → system (latest pass) → user (verified selections win).
 
 ## Phasing
 
 - **Phase 0** — `PipelineParams` threading + stage caching + re-run DAG. *(Independently valuable; also the prerequisite for everything else. Makes all re-runs cheap.)*
 - **Phase 1** — diagnostics summary + a manual params panel (tweak a knob, re-run, before/after diff). Validates caching + re-run + diff UX with no AI.
-- **Phase 2** — operations log with **user/system provenance** + the base→system→user layering/precedence + the delta preview (block 6). The foundation "fix the rest" writes into.
-- **Phase 3** — **"Fix the rest of the song for this"** (approach B end-to-end): a hand correction drives the edit-scored **search** (block 5), applied as a superseding system layer. Still no LLM — the correction + a which-stage heuristic pick the knobs.
+- **Phase 2** — **verified selections** as the user layer + `user`/`system` provenance + the base→system→user layering/precedence + the delta preview (block 6). The foundation "fix the rest" writes into.
+- **Phase 3** — **"Fix the rest of the song for this"** (approach B end-to-end): a verified selection drives the edit-scored **search** (block 5), applied as a superseding system layer. Still no LLM — the selection + a which-stage heuristic pick the knobs.
 - **Phase 4** — the local **LLM** replaces the heuristic: from the correction + scoped diagnostics it narrows the search's starting knobs/directions.
 - **Phase 5** — versioning UI (diff/revert).
 
