@@ -113,6 +113,9 @@ export function setupEditing(ctx: EditContext): void {
     setDirty(false);
     // Switch the whole score to the fixed 16th grid so notes stay put.
     rerenderAll(true);
+    // Redrawing moved the note x-positions the playhead anchors to — put the
+    // marker back where playback last left it (e.g. where the user paused).
+    sync.refresh();
   };
 
   const exitEditMode = (): void => {
@@ -124,6 +127,7 @@ export function setupEditing(ctx: EditContext): void {
     editSession.dirty = false;
     closePopover();
     rerenderAll(false); // back to proportional view
+    sync.refresh(); // reposition the retained marker for the proportional layout
   };
 
   const doSave = async (): Promise<boolean> => {

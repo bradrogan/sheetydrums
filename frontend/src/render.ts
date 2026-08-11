@@ -11,14 +11,30 @@ import type { DrumTranscriptionEventsV1Draft, Note } from './generated/events';
 type SchemaDrumClass = Note['instrument'];
 
 /**
+ * Notehead glyph style per drum class:
+ *   'normal'   — filled oval (kick, snare, toms)
+ *   'x'        — cross / X (closed hi-hat, ride, crash, chick)
+ *   'circle-x' — X inside a circle (open hi-hat) — the standard way to
+ *                distinguish an open hi-hat from a closed one at the notehead.
+ */
+type NoteheadStyle = 'normal' | 'x' | 'circle-x';
+
+/** Notehead style → VexFlow key suffix (empty = default filled notehead). */
+const NOTEHEAD_SUFFIX: Record<NoteheadStyle, string> = {
+  normal: '',
+  x: '/x2', // noteheadXBlack
+  'circle-x': '/x3', // noteheadCircleX
+};
+
+/**
  * Mapping from each schema drum class to its position on the 5-line percussion
- * staff, and whether it uses an X notehead (for cymbals + hi-hat).
+ * staff, and which notehead glyph it draws.
  *
  * Position uses VexFlow's pitch-coordinate convention even though we render
  * with the percussion clef. Treble-clef mnemonic for the staff lines (bottom
  * to top): E G B D F (E/4, G/4, B/4, D/5, F/5). Spaces: F A C E.
  *
- *   - Above top line: G/5 (hi-hat / closed/open)
+ *   - Above top line: G/5 (hi-hat / closed=X, open=circled-X)
  *   - Above staff:    A/5 (crash)
  *   - Top line F/5:   ride
  *   - 4th space E/5:  high tom
@@ -28,17 +44,17 @@ type SchemaDrumClass = Note['instrument'];
  *   - 1st space F/4:  kick
  *   - Below staff D/4: hi-hat chick (pedal)
  */
-const DRUM_POSITION: Record<SchemaDrumClass, { key: string; xNotehead: boolean }> = {
-  kick:         { key: 'f/4', xNotehead: false },
-  snare:        { key: 'c/5', xNotehead: false },
-  hihat_closed: { key: 'g/5', xNotehead: true },
-  hihat_open:   { key: 'g/5', xNotehead: true },
-  hihat_chick:  { key: 'd/4', xNotehead: true },
-  ride:         { key: 'f/5', xNotehead: true },
-  crash:        { key: 'a/5', xNotehead: true },
-  tom_high:     { key: 'e/5', xNotehead: false },
-  tom_mid:      { key: 'd/5', xNotehead: false },
-  tom_low:      { key: 'a/4', xNotehead: false },
+const DRUM_POSITION: Record<SchemaDrumClass, { key: string; notehead: NoteheadStyle }> = {
+  kick:         { key: 'f/4', notehead: 'normal' },
+  snare:        { key: 'c/5', notehead: 'normal' },
+  hihat_closed: { key: 'g/5', notehead: 'x' },
+  hihat_open:   { key: 'g/5', notehead: 'circle-x' },
+  hihat_chick:  { key: 'd/4', notehead: 'x' },
+  ride:         { key: 'f/5', notehead: 'x' },
+  crash:        { key: 'a/5', notehead: 'x' },
+  tom_high:     { key: 'e/5', notehead: 'normal' },
+  tom_mid:      { key: 'd/5', notehead: 'normal' },
+  tom_low:      { key: 'a/4', notehead: 'normal' },
 };
 
 /**
@@ -217,14 +233,22 @@ function makeBarView(
 
   const [num, den] = timeSig.split('/').map(Number);
 
+  // Overlays are created once and re-attached on every drawBar (see drawBar) so
+  // their .active state + position survive redraws — entering edit mode or
+  // editing a single bar no longer wipes the playhead.
+  const playhead = document.createElement('div');
+  playhead.className = 'playhead';
+  const highlight = document.createElement('div');
+  highlight.className = 'note-highlight';
+
   return {
     index,
     startSeconds,
     endSeconds,
     row,
     svgHost,
-    playhead: document.createElement('div'),
-    highlight: document.createElement('div'),
+    playhead,
+    highlight,
     contentX0: STAVE_X,
     contentX1: STAVE_X + STAVE_WIDTH,
     svgHeight: BAR_SVG_HEIGHT,
@@ -251,15 +275,11 @@ export function drawBar(
   barView.gridXs = undefined;
 
   // Playhead + highlight overlays live inside `.bar-svg` (position:relative) so
-  // they scroll with the 800px-wide SVG content on narrow screens.
-  const highlight = document.createElement('div');
-  highlight.className = 'note-highlight';
-  svgHost.appendChild(highlight);
-  const playhead = document.createElement('div');
-  playhead.className = 'playhead';
-  svgHost.appendChild(playhead);
-  barView.highlight = highlight;
-  barView.playhead = playhead;
+  // they scroll with the 800px-wide SVG content on narrow screens. They're
+  // persistent elements (created in makeBarView) — re-attached rather than
+  // recreated so their active state + position survive this redraw.
+  svgHost.appendChild(barView.highlight);
+  svgHost.appendChild(barView.playhead);
 
   const renderer = new Renderer(svgHost, Renderer.Backends.SVG);
   renderer.resize(BAR_SVG_WIDTH, BAR_SVG_HEIGHT);
@@ -741,8 +761,9 @@ function buildStaveNotes(
 
 function keyForHit(hit: Note): string {
   const mapping = DRUM_POSITION[hit.instrument];
-  // Suffix `/x2` selects VexFlow's X notehead for cymbals + hi-hat hits.
-  return mapping.xNotehead ? `${mapping.key}/x2` : mapping.key;
+  // The suffix picks a non-default notehead glyph (X for cymbals/closed hats,
+  // circled-X for open hats); '' leaves the default filled oval.
+  return `${mapping.key}${NOTEHEAD_SUFFIX[mapping.notehead]}`;
 }
 
 export function parsePosition(p: string): number {

@@ -370,6 +370,12 @@ button.ghost:hover {
   gap: 1rem;
   margin-bottom: 1rem;
   flex-wrap: wrap;
+  /* Stay reachable (esp. the Edit/Save buttons) while the long score scrolls. */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--paper);
+  padding: 0.5rem 0;
 }
 .project-topbar #meta {
   flex: 1 1 auto;
@@ -381,10 +387,11 @@ button.ghost:hover {
   align-items: flex-start;
 }
 
-/* Left column stays put while the score column scrolls. */
+/* Left column stays put while the score column scrolls — parked just below the
+   sticky top bar so the two don't overlap. */
 .project-left {
   position: sticky;
-  top: 1rem;
+  top: 3.75rem;
   flex: 0 0 360px;
   width: 360px;
   align-self: flex-start;

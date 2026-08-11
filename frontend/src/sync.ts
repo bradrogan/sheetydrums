@@ -14,6 +14,8 @@ function pct(x: number): number {
 export class SyncController {
   private bars: BarView[];
   private activeIndex = -1;
+  /** Last time passed to update(); -1 until playback has positioned once. */
+  private lastTime = -1;
   /** When true, clicks edit the score instead of seeking playback. */
   editMode = false;
   /** Set by the caller; invoked when a click on the score maps to a seek time. */
@@ -32,6 +34,7 @@ export class SyncController {
 
   /** Position the playhead + highlight for playback time `t` (seconds). */
   update(t: number): void {
+    this.lastTime = t;
     const idx = this.findBar(t);
     if (idx === -1) {
       this.clear();
@@ -64,6 +67,17 @@ export class SyncController {
     } else {
       bar.highlight.classList.remove('active');
     }
+  }
+
+  /**
+   * Re-apply the last playhead position onto the (possibly redrawn) bars.
+   * Call after the score is re-rendered — e.g. entering/leaving edit mode swaps
+   * every bar between proportional and grid layout, which moves the note x's the
+   * playhead is anchored to. Because the active bar is unchanged, this repositions
+   * without re-scrolling. No-op before playback has positioned the playhead once.
+   */
+  refresh(): void {
+    if (this.lastTime >= 0) this.update(this.lastTime);
   }
 
   /** Hide all overlays (e.g. when playback is reset or out of range). */
