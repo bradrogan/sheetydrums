@@ -273,6 +273,43 @@ Add to each project JSON: `params` (block 1), `edits` (block 6 op log), `version
 - **Phase 4** — operations log + anchor-replay + conflict surfacing + "keep edits" toggle; wire edits in as the search's ground truth.
 - **Phase 5** — versioning UI (diff/revert).
 
+## Evidence: the global vs per-song boundary (measured 2026-08)
+
+While diagnosing an open-hi-hat miss (Lazy Eye, bars 89–100 clearly open but
+labelled closed) we measured how far a *global* rule can go before the tuning
+loop is needed. Method: the open/closed decision is a pure function of the
+per-hit decay ratios, so we scored candidate rules offline against the ratio
+dumps + ground truth.
+
+Finding: the old "bimodal only if clearly-tight ≥15% AND clearly-loose ≥15%"
+gate missed real open sections that are a small minority. Replacing it with a
+**threshold-straddle** test (split iff the two ratio clusters land on opposite
+sides of the open threshold) — now shipped in `CheukExpander` — captures the
+open hits **when they genuinely ring longer than the closed ones**:
+
+| song | open F1 before → after | note |
+|---|---|---|
+| Disco Inferno | 0% → **53.7%** (P 61% / R 48%) | offbeat + bridge opens; aggregate hi-hat F1 also up |
+| Lazy Eye (bars 89–100) | missed → **caught** | clean, clearly-ringing open outro |
+| Back in Black | all-open → all-open | both clusters above threshold → no split, no regression |
+| **Boogie Oogie Oogie** | 0% → 13% (P 33%, 18 TP / **36 FP**) | **mild regression** — see below |
+
+The **limit** is Boogie: its real chorus opens are fast 16th "barks" choked as
+quickly as the closed hats, so open and closed decay-ratios overlap. The high
+cluster there is ~⅓ real opens, ~⅔ loud closed accents — by ratio alone
+indistinguishable. So the split surfaces a few real opens at the cost of more
+false ones (net slightly negative on Boogie). No ratio-only global rule can
+separate "real open" from "loud closed" in that regime.
+
+**This is exactly the global/per-song boundary:** the straddle rule is the safe
+*global* win (ringing opens); the remaining case — choked opens indistinguishable
+by decay-ratio — is what the **per-song loop** resolves (you select the bars and
+say "these are open", and the edit-scored search takes the split for *this* song
+even though a global default wouldn't), and what the **v2 spectral/trained
+classifier** resolves globally. Concretely: for Boogie the loop would score the
+split against your edits, see it disagrees, and leave it closed; for Lazy Eye it
+would confirm the split.
+
 ## Risks / open questions
 
 - **Search objective before edits exist** — early on there are no edits to score against; rely on the complaint-derived objective (block 5b) and revisit its formulation.

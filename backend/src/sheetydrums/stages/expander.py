@@ -12,15 +12,17 @@ local energy and spectrum in the relevant sub-stems:
     fast grooves don't alias the next stroke into the "sustain" measurement (the
     bug that flipped whole closed songs to open). Ratios are clustered/compared
     *across the whole song* so the split adapts to a recording's hihat character
-    rather than an absolute cutoff. NOTE (validated Aug 2026, see
-    scripts/eval/): with the aliasing removed the feature reliably captures a
-    song's *overall* hat character (loose songs → open, tight → closed) but does
-    NOT separate open from closed *within* a song on real separated audio —
-    open and closed decay-ratios overlap almost entirely, because a hat choked
-    by the next stroke rings about the same whether played open or closed (the
-    difference is timbral, not decay-length). Positively detecting the open hits
-    inside an otherwise-closed groove needs a spectral/timbral feature or a
-    trained model (v2), not further window tuning.
+    rather than an absolute cutoff. The song is split into open + closed only
+    when its two ratio clusters *straddle* the open/closed threshold (one clearly
+    choked, one clearly ringing); a single-character song gets one uniform label.
+    NOTE (validated Aug 2026, see scripts/eval/): this works when a song's open
+    hits genuinely ring longer than its closed ones (open outros, disco offbeat
+    opens — split lifts open F1 0→54% on Disco Inferno, recovers Lazy Eye's open
+    outro). It CANNOT separate opens that are choked as fast as the closed hats
+    (fast 16th "barks" like Boogie Oogie Oogie's choruses): there the open/closed
+    decay-ratios overlap and the split is noisy (open F1 only ~13%), because the
+    difference is then timbral, not decay-length. Reliably catching those still
+    needs a spectral/timbral feature or a trained model (v2).
   - For "tom" hits: band-limited (50–500 Hz) spectral centroid of the tom
     sub-stem in the hit's body window, clustered *across the whole song*. The
     highest cluster's hits become tom_high, the lowest become tom_low, the
@@ -88,17 +90,18 @@ class CheukExpander:
           clustering. A small minority of hits have near-zero attack energy
           and produce ratios in the dozens — those outliers would otherwise
           drag the "open" cluster center far above the rest of the data.
-        - hihat_clearly_tight / hihat_clearly_loose: ratios that are
-          unambiguously "choked" or "ringing" respectively. Used for
-          shape-based bimodality detection (below).
-        - hihat_bimodal_min_fraction: a song is treated as bimodal only when
-          BOTH the clearly-tight fraction AND the clearly-loose fraction
-          exceed this. Otherwise the song's hihat is single-character
-          throughout (e.g. Back in Black, always loose) and we use the
-          unimodal fallback. Empirically, k-means cluster-gap can't separate
-          these cases because the long-tail outliers from low-energy attacks
-          fool k-means into a fake-bimodal split.
-        - hihat_unimodal_open_threshold: when the distribution is unimodal,
+        - hihat_clearly_tight / hihat_clearly_loose / hihat_bimodal_min_fraction:
+          DEPRECATED gate (kept only so the debug dump can still report the
+          tight/loose fractions). The old "bimodal iff clearly-tight ≥15% AND
+          clearly-loose ≥15%" rule missed songs whose open part is a small but
+          real minority (e.g. an open outro), so the decision now uses the
+          threshold-straddle test in _assign_hihat_labels instead.
+        - hihat_unimodal_open_threshold: the open/closed boundary. Doubles as the
+          straddle pivot — the song is treated as a genuine open/closed MIX (and
+          split by cluster) only when its two ratio clusters land on opposite
+          sides of this value; otherwise every hit gets one uniform label from
+          whether the song's median is above it. So when the distribution is
+          single-character (unimodal),
           if the song's median ratio exceeds this we call every hat open;
           otherwise every hat closed. Set near the natural midpoint of
           plausible ratios so a "tight" song's median (~0.1) stays closed
@@ -178,14 +181,14 @@ class CheukExpander:
         Decision logic:
           - 0 hihat hits → empty mapping.
           - 1 hihat hit → hihat_closed (conventional default with no context).
-          - Bimodality test: the song has BOTH clearly-tight (ratio < ε_tight)
-            and clearly-loose (ratio > ε_loose) populations, each at least
-            `hihat_bimodal_min_fraction` of the total. If both are present →
-            cluster via 1D k-means k=2 (on outlier-clipped ratios), low
-            cluster → hihat_closed, high cluster → hihat_open.
-          - Otherwise the song's hihat is single-character. Pick a uniform
-            label from the median ratio vs `hihat_unimodal_open_threshold`
-            (loose songs land on hihat_open; tight songs on hihat_closed).
+          - Cluster the ratios via 1D k-means k=2 (on outlier-clipped ratios).
+            STRADDLE test: if the two cluster centers land on opposite sides of
+            `hihat_unimodal_open_threshold` (one < thr, one ≥ thr) the song
+            genuinely mixes open + closed → label by cluster (low → hihat_closed,
+            high → hihat_open).
+          - Otherwise both clusters are on the same side → single-character hat →
+            one uniform label from the median vs `hihat_unimodal_open_threshold`
+            (loose songs → hihat_open, tight songs → hihat_closed).
 
         Also records per-hit ratios + the decision to `self.last_hihat_debug`.
         """
@@ -241,43 +244,54 @@ class CheukExpander:
             return {hihat_indices[0]: "hihat_closed"}
 
         raw: NDArray[np.floating] = np.asarray(hihat_ratios, dtype=np.float64)
+        # tight_frac / loose_frac are retained for the debug dump only — the
+        # decision no longer gates on them (see the straddle test below).
         tight_frac: float = float((raw < self._hihat_clearly_tight).mean())
         loose_frac: float = float((raw > self._hihat_clearly_loose).mean())
         median: float = float(np.median(raw))
+        thr: float = self._hihat_unimodal_open_threshold
 
-        is_bimodal: bool = (
-            tight_frac >= self._hihat_bimodal_min_fraction
-            and loose_frac >= self._hihat_bimodal_min_fraction
-        )
+        # Cluster the ratios into two, then decide whether the song genuinely
+        # MIXES open and closed by whether the clusters *straddle* the open/closed
+        # threshold: one cluster in "choked/closed" territory (center < thr) and
+        # the other in "ringing/open" (center >= thr). If both centers sit on the
+        # same side, the hat is single-character throughout → one uniform label
+        # from the median (keeps an always-loose song like Back in Black fully
+        # open, and an always-tight song fully closed).
+        #
+        # This replaces the old "clearly-tight AND clearly-loose each ≥15%" gate,
+        # which missed songs whose open part is a small but real, clearly-ringing
+        # minority (e.g. an open outro): validated Aug 2026 — split lifts open F1
+        # 0→54% on Disco Inferno and recovers Lazy Eye's open outro, with no
+        # regression on the single-character songs. See scripts/eval/.
+        clipped: NDArray[np.floating] = np.clip(raw, 0.0, self._hihat_ratio_clip)
+        centers, assignments = _kmeans_1d(clipped, k=2)
+        order: NDArray[np.intp] = np.argsort(centers)
+        lo_center = float(centers[int(order[0])])
+        hi_center = float(centers[int(order[1])])
+        centers_out: list[float] = [lo_center, hi_center]
+        straddles: bool = lo_center < thr <= hi_center
 
         labels_by_index: dict[int, str]
         decision: str
-        centers_out: list[float] = []
-        if not is_bimodal:
-            label: str = (
-                "hihat_open" if median > self._hihat_unimodal_open_threshold
-                else "hihat_closed"
-            )
-            decision = f"unimodal->{'open' if label == 'hihat_open' else 'closed'}"
-            labels_by_index = {i: label for i in hihat_indices}
-            for h in per_hit:
-                h["label"] = label
-        else:
-            clipped: NDArray[np.floating] = np.clip(raw, 0.0, self._hihat_ratio_clip)
-            centers, assignments = _kmeans_1d(clipped, k=2)
-            order: NDArray[np.intp] = np.argsort(centers)
-            centers_out = [float(centers[int(o)]) for o in order]
+        if straddles:
             cluster_to_label: dict[int, str] = {
                 int(order[0]): "hihat_closed",
                 int(order[1]): "hihat_open",
             }
-            decision = "bimodal->kmeans"
+            decision = "bimodal-split (straddle)"
             labels_by_index = {
                 hihat_indices[i]: cluster_to_label[int(a)]
                 for i, a in enumerate(assignments)
             }
             for j, a in enumerate(assignments):
                 per_hit[j]["label"] = cluster_to_label[int(a)]
+        else:
+            label: str = "hihat_open" if median > thr else "hihat_closed"
+            decision = f"unimodal->{'open' if label == 'hihat_open' else 'closed'}"
+            labels_by_index = {i: label for i in hihat_indices}
+            for h in per_hit:
+                h["label"] = label
 
         n_open = sum(1 for lab in labels_by_index.values() if lab == "hihat_open")
         self.last_hihat_debug = {
@@ -287,6 +301,7 @@ class CheukExpander:
             "tight_frac": round(tight_frac, 3),
             "loose_frac": round(loose_frac, 3),
             "kmeans_centers": [round(c, 4) for c in centers_out],
+            "straddles": straddles,
             "n_open": n_open,
             "n_closed": len(hihat_indices) - n_open,
             "thresholds": {
