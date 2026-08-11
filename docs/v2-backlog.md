@@ -47,7 +47,15 @@ A transcription is rarely perfect. v1 produces `events.json` and stops; v2 shoul
 
 This is mostly a frontend project but implies two backend changes: (a) persist the drum stem from the separation stage, and (b) possibly emit a richer events.json that retains the raw onset times alongside the quantized positions, so edits can re-quantize without re-running the pipeline.
 
-## Adaptive tuning (AI-in-the-loop)
+## Adaptive tuning (AI-in-the-loop)  ← NEXT UP
+
+> **Now the planned next feature.** Full design (locked decisions, parameter
+> catalog, stage-caching DAG, local-LLM choice, edit-scored search, phasing) is in
+> [`docs/design/ai-tuning-loop.md`](design/ai-tuning-loop.md). Decisions since this
+> sketch: parameterize *all* meaningful knobs; run a **local open-source LLM**
+> (free); suggestion = **LLM + automated param search scored against the user's
+> edits**; input allows **bar/note selection**. Start with Phase 0 (params +
+> stage caching) — it also makes every ordinary re-run cheap.
 
 Idea from Brad (2026-07): make the pipeline self-improving per song rather than relying on one static set of thresholds. Three connected pieces:
 
