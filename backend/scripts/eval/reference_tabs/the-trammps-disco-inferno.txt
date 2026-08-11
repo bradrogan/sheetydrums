@@ -1,0 +1,43 @@
+The Trammps - "Disco Inferno" (1976)
+Drummer: Earl Young.  129 bpm, 4/4, 92 bars.
+Source of ground truth: Drumeo transcription by Mathias Hedegaard Nielsen
+  (Licensed For Personal Use Only -- the PDF is NOT committed; only the derived
+   per-section hit patterns live in compare_the_trammps_disco_inferno.py).
+
+WHY THIS SONG
+  Earl Young's groove is the canonical disco open/closed hi-hat pattern. The
+  chart genuinely spans the whole hi-hat range section by section, which makes it
+  the primary discriminator for tuning the CheukExpander open/closed split:
+    - closed verses                       -> hihat_closed only
+    - grooves with offbeat opens (&2, &4) -> mostly closed, a few opens
+    - all-open bridge + final chorus      -> hihat_open throughout
+
+CONFIDENCE
+  Authoritative: the hi-hat open/closed CHARACTER of every section. Each system's
+  noteheads were read at high zoom to tell plain-x (closed) from circled-x (open).
+  Approximate: kick (encoded four-on-the-floor) and snare (backbeat 2 & 4) -- the
+  song's foundation, good enough for DP bar-alignment but not a note-perfect
+  transcription. Fills are approximated by the section groove (plus a 2-bar snare
+  roll in the intro). Treat kick/snare F1 as indicative only; the hi-hat columns
+  are the measurement this song exists for.
+
+HI-HAT PATTERN PER BAR (16 sixteenth cells; eighths on even cells; beat-1 rest)
+  closed        --x-x-x-x-x-x-x-
+  offbeat open  --x-x-X-x-x-x-X-     (open on the "&" of 2 and 4)
+  all open      --X-X-X-X-X-X-X-     (+ hi-hat foot on the beats, not scored)
+
+SECTION MAP (bar numbers from the chart's system labels)
+  1-7    Intro                  crash pickup + 2-bar snare roll, then closed groove
+  8-15   Intro groove           closed
+  16-23  Groove (offbeat open)  open on &2, &4
+  24-27  Verse 1                closed
+  28-35  Verse 1 cont           closed
+  36-43  Chorus 1               open on &2, &4
+  44-47  Verse 2                closed
+  48-55  Verse 2 cont           closed
+  56-63  Chorus 2               open on &2, &4
+  64-72  Bridge                 all open
+  73-84  Verse 3                closed
+  85-92  Chorus 3               all open  ("Play 4x", fade out on 3rd repeat)
+
+Encoded totals: 456 closed + 167 open hi-hat hits (26.8% open).
