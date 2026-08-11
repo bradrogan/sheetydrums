@@ -146,6 +146,18 @@ Walking skeleton works end to end with real Demucs + real ADTOF + real Beat This
   detecting opens inside a closed groove needs a spectral/trained feature (v2),
   not more window tuning. So both mixed songs now correctly stop over-firing but
   label all-closed (open recall 0) — an honest, conservative result.
+- **Hihat straddle-split (Aug 2026, supersedes the "all-closed" note above)** —
+  the open/closed decision now splits a song iff its two decay-ratio clusters
+  *straddle* the open threshold (one center < 0.40, one ≥ 0.40), replacing the
+  old "clearly-tight AND clearly-loose each ≥15%" gate that missed small-but-real
+  open sections. Measured: open F1 0→54% on Disco Inferno, and Lazy Eye's
+  clearly-ringing open outro (bars 89–100) is now caught — with no regression on
+  single-character songs (Back in Black stays all-open; genuinely all-closed
+  songs stay closed). The one loser is **Boogie Oogie Oogie** (open F1 0→13%,
+  36 false opens): its chorus opens are fast choked 16ths whose decay-ratios
+  overlap the closed hats, so the split is noisy there — the residual case for
+  the v2 spectral/trained classifier and the per-song tuning loop
+  (`docs/design/ai-tuning-loop.md`).
 
 **v1 backend build complete.** Pipeline produces real Demucs separation, real ADTOF transcription, real Beat This! beat grid, and clean 16th-note quantized positions.
 
