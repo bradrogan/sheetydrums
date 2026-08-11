@@ -5,10 +5,36 @@ import { clampSeek, type PlayerHandle } from './playback';
 
 export function createAudioPlayer(el: HTMLAudioElement, src: string): PlayerHandle {
   el.src = src;
+  // Load metadata up front so duration is known and seeks land immediately —
+  // otherwise the first source-switch seek (below) is issued before the element
+  // is seekable and the browser silently drops it, restarting at 0:00.
+  el.preload = 'metadata';
 
   let tickCb: (t: number) => void = () => {};
   let stateCb: (playing: boolean) => void = () => {};
   let rafId = 0;
+
+  // A seek requested before the media is seekable (readyState < HAVE_METADATA)
+  // can't be applied yet; stash it and apply once metadata arrives.
+  let pendingSeek: number | null = null;
+  const HAVE_METADATA = 1;
+  const applyPendingSeek = (): void => {
+    if (pendingSeek == null) return;
+    el.currentTime = clampSeek(pendingSeek, el.duration);
+    pendingSeek = null;
+    tickCb(el.currentTime);
+  };
+  el.addEventListener('loadedmetadata', applyPendingSeek);
+
+  const seekAbsolute = (seconds: number): void => {
+    if (el.readyState >= HAVE_METADATA) {
+      el.currentTime = clampSeek(seconds, el.duration);
+      tickCb(el.currentTime);
+    } else {
+      pendingSeek = seconds; // applied on 'loadedmetadata'
+      el.load(); // kick the metadata fetch so that event fires
+    }
+  };
 
   const startLoop = (): void => {
     if (rafId) return;
@@ -40,13 +66,11 @@ export function createAudioPlayer(el: HTMLAudioElement, src: string): PlayerHand
     play: () => void el.play(),
     pause: () => el.pause(),
     toggle: () => (el.paused ? void el.play() : el.pause()),
-    seekTo: (seconds) => {
-      el.currentTime = clampSeek(seconds, el.duration);
-      tickCb(el.currentTime);
-    },
+    seekTo: (seconds) => seekAbsolute(seconds),
     seekBy: (delta) => {
-      el.currentTime = clampSeek(el.currentTime + delta, el.duration);
-      tickCb(el.currentTime);
+      // Base off the pending target if we haven't loaded yet, else the live time.
+      const base = el.readyState >= HAVE_METADATA ? el.currentTime : pendingSeek ?? 0;
+      seekAbsolute(base + delta);
     },
     getCurrentTime: () => el.currentTime,
     getDuration: () => el.duration,
@@ -66,6 +90,7 @@ export function createAudioPlayer(el: HTMLAudioElement, src: string): PlayerHand
       el.removeEventListener('play', onPlay);
       el.removeEventListener('pause', onPauseOrEnd);
       el.removeEventListener('ended', onPauseOrEnd);
+      el.removeEventListener('loadedmetadata', applyPendingSeek);
       el.removeAttribute('src');
       el.load();
     },
