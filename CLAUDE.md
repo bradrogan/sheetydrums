@@ -103,15 +103,17 @@ Walking skeleton works end to end with real Demucs + real ADTOF + real Beat This
   run downloads ~700 MB to `~/.cache/sheetydrums/drumsep/`. CC-BY-NC-SA weights.
 - **CheukExpander** — REAL. Pure-Python 5→10 class expander. Cymbal hits choose
   ride vs crash by comparing sub-stem energy at the hit time. Hihat hits get a
-  **per-song** classification: collect the late/attack RMS ratio on the hihat
+  **per-song** classification: collect the decay/attack RMS ratio on the hihat
   sub-stem for every hihat hit, check shape: if BOTH a clearly-tight (ratio <
   0.15) and clearly-loose (ratio > 0.70) population have ≥15% of the hits, the
   song genuinely mixes closed and open hihat — cluster via 1D k-means k=2 on
   outlier-clipped ratios and label by rank. Otherwise the song uses a single
   hihat character (always-loose like Back in Black, or always-tight) and every
   hit gets a uniform label decided by whether the song's median ratio exceeds
-  0.40. The shape-based test avoids the "k-means finds two clusters in
-  unimodal data" trap that outlier-laden ratios produce. Tom hits get a per-song
+  0.40. The decay window is **adaptive** — clamped to end just before the next
+  hihat onset — so busy fast grooves don't alias the next stroke into the
+  "sustain" measurement (Aug 2026 fix; see below). The shape-based test avoids
+  the "k-means finds two clusters in unimodal data" trap. Tom hits get a per-song
   classification: collect the band-limited (50–500 Hz) spectral centroid for
   every tom hit, cluster the song's tom population with 1D k-means (k=3 with
   a merge step for clusters whose centers come out within 25 Hz of each other),
@@ -127,6 +129,23 @@ Walking skeleton works end to end with real Demucs + real ADTOF + real Beat This
   hihat split is sensitive to "loose hihat" passages that sit between open
   and closed, and tom recall is limited by ADTOF (the few toms it does fire
   on are classified correctly — `tom_low` precision = 100%).
+- **Hihat open/closed over-firing fix + finding (Aug 2026)** — two new eval
+  songs (`compare_the_trammps_disco_inferno.py`, closed↔open mix;
+  `compare_a_taste_of_honey_boogie_oogie_oogie.py`, closed-dominant 16ths)
+  showed the expander was flipping whole closed songs to **all open**. Root
+  cause: the old fixed 0.15–0.35 s "sustain" window straddled the *next* stroke
+  in any groove faster than ~3 hits/sec, so busy closed hats read as ringing.
+  Clamping the decay window to end before the next hihat onset **eliminated the
+  over-firing** (open false-positives 191→0 on Disco, 375→0 on Boogie;
+  `hihat_closed` F1 60→74% / 53→74%) with **no regression** on Back in Black
+  (still `unimodal→open`, median 0.49). BUT the eval also showed the
+  decay-ratio feature captures a song's *overall* hat character only — it does
+  **not** separate open from closed *within* a song (GT-open vs GT-closed
+  decay-ratios overlap almost entirely: a hat choked by the next stroke rings
+  the same whether open or closed; the difference is timbral). Positively
+  detecting opens inside a closed groove needs a spectral/trained feature (v2),
+  not more window tuning. So both mixed songs now correctly stop over-firing but
+  label all-closed (open recall 0) — an honest, conservative result.
 
 **v1 backend build complete.** Pipeline produces real Demucs separation, real ADTOF transcription, real Beat This! beat grid, and clean 16th-note quantized positions.
 

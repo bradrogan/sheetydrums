@@ -110,6 +110,14 @@ class Pipeline:
                 f"expander-{self._substem_branch.expander.name}",
                 [{"time": h.time, "class": h.drum_class, "confidence": h.confidence} for h in hits],
             )
+            # Rich per-hit hi-hat ratio diagnostics (if the expander exposes
+            # them) — lets the open/closed split be inspected + tuned offline.
+            hihat_dbg = getattr(self._substem_branch.expander, "last_hihat_debug", None)
+            if hihat_dbg is not None:
+                self._debug.write_json(
+                    f"expander-{self._substem_branch.expander.name}-hihat-ratios",
+                    hihat_dbg,
+                )
 
         grid: BeatGrid = self._beat_tracker.track(mix)
         # Downbeat-phase correction: Beat This! can place downbeats off-phase

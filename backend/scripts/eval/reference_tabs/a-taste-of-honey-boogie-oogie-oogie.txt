@@ -1,0 +1,43 @@
+A Taste Of Honey - "Boogie Oogie Oogie" (1978)
+Drummer: Donald R. Johnson.  124 bpm, 4/4, ~148 bars.
+Source of ground truth: Drumeo transcription by Mathias Hedegaard Nielsen
+  (Licensed For Personal Use Only -- the PDF is NOT committed; only the derived
+   per-section hit patterns live in compare_a_taste_of_honey_boogie_oogie_oogie.py).
+
+WHY THIS SONG
+  The closed-dominant, high-tempo stress case for the CheukExpander hi-hat split.
+  ~90% of the song is relentless SIXTEENTH-note closed hats at 124 bpm. 16ths are
+  ~0.12 s apart, so the expander's fixed 0.15-0.35 s "sustain" window straddles the
+  next 1-2 strokes -- the aliasing that flips a busy closed groove to "open". The
+  choruses add a genuine open-hat passage (disco offbeat barks), so open recall is
+  tested too. Pairs with Disco Inferno: this is the "does the fix stop over-firing?"
+  anchor; Disco Inferno is the "clean mix" discriminator.
+
+CONFIDENCE
+  Authoritative: the hi-hat MODE per section (closed 16ths vs the alternating
+  open-16th chorus pattern), read at high zoom. Two conservative simplifications:
+    - closed sections encoded as fully-closed 16ths; the occasional single
+      phrase-end open "bark" in some intro/verse bars is omitted (treated as
+      closed -> at worst a few open false-negatives, never a false open).
+    - kick = four-on-the-floor, snare = backbeat 2 & 4 (foundation only, enough
+      for DP bar-alignment, not a note-perfect kick/snare transcription).
+  Fills approximated by the section groove.
+
+HI-HAT PATTERN PER BAR (16 sixteenth cells)
+  closed 16ths   xxxxxxxxxxxxxxxx
+  open 16ths     xXxXxXxXxXxXxXxX   (closed on beat & "&"; open on "e" & "a")
+
+SECTION MAP (bar numbers from the chart's system labels)
+  1-24    Intro           closed 16ths ("Play 3x")
+  25-40   Verse 1         closed 16ths
+  41-44   Chorus 1 lick   open 16ths (offbeat barks)
+  45-60   Chorus 1 body   closed 16ths
+  61-72   Verse 2         closed 16ths
+  73-76   Chorus 2 lick   open 16ths
+  77-84   Chorus 2 body   closed 16ths
+  85-116  Breakdown       closed 16ths
+  117-132 Chorus 3        open 16ths (long outro chorus)
+  133-144 Outro           closed 16ths ("Play 3x", fade out)
+  145-148 Outro open      open 16ths
+
+Encoded totals: 2144 closed + 224 open hi-hat hits (9.5% open).

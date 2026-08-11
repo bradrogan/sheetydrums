@@ -6,11 +6,21 @@ local energy and spectrum in the relevant sub-stems:
 
   - For "cymbal" hits: compare RMS energy in the ride sub-stem vs the crash
     sub-stem around the hit time. Whichever has more energy wins.
-  - For "hihat" hits: late-window vs attack-window RMS ratio on the hihat
-    sub-stem (a high ratio = sustained ringing = open). Like the toms, the
-    ratios are clustered *across the whole song* — the per-song split adapts
-    to a recording's hihat character rather than imposing an absolute Hz/ratio
-    cutoff that would over- or under-classify depending on the kit miking.
+  - For "hihat" hits: decay-window vs attack-window RMS ratio on the hihat
+    sub-stem (a high ratio = sustained ringing = open). The decay window is
+    ADAPTIVE — its end is clamped to just before the next hihat onset — so busy
+    fast grooves don't alias the next stroke into the "sustain" measurement (the
+    bug that flipped whole closed songs to open). Ratios are clustered/compared
+    *across the whole song* so the split adapts to a recording's hihat character
+    rather than an absolute cutoff. NOTE (validated Aug 2026, see
+    scripts/eval/): with the aliasing removed the feature reliably captures a
+    song's *overall* hat character (loose songs → open, tight → closed) but does
+    NOT separate open from closed *within* a song on real separated audio —
+    open and closed decay-ratios overlap almost entirely, because a hat choked
+    by the next stroke rings about the same whether played open or closed (the
+    difference is timbral, not decay-length). Positively detecting the open hits
+    inside an otherwise-closed groove needs a spectral/timbral feature or a
+    trained model (v2), not further window tuning.
   - For "tom" hits: band-limited (50–500 Hz) spectral centroid of the tom
     sub-stem in the hit's body window, clustered *across the whole song*. The
     highest cluster's hits become tom_high, the lowest become tom_low, the
@@ -42,6 +52,9 @@ class CheukExpander:
         cymbal_window_seconds: tuple[float, float] = (0.01, 0.20),
         hihat_attack_window_seconds: tuple[float, float] = (0.005, 0.050),
         hihat_late_window_seconds: tuple[float, float] = (0.15, 0.35),
+        hihat_decay_start_seconds: float = 0.050,
+        hihat_decay_max_seconds: float = 0.300,
+        hihat_next_onset_guard_seconds: float = 0.010,
         hihat_ratio_clip: float = 3.0,
         hihat_clearly_tight: float = 0.15,
         hihat_clearly_loose: float = 0.70,
@@ -57,8 +70,20 @@ class CheukExpander:
           ride/crash energy. (-pre, +post) seconds from the hit.
         - hihat_attack_window_seconds: the immediate attack window for a
           hihat hit (used as the baseline for the open/closed ratio).
-        - hihat_late_window_seconds: the post-attack "sustain" window. High
-          energy here vs the attack baseline means the hat is ringing.
+        - hihat_late_window_seconds: the OLD fixed post-attack "sustain" window.
+          No longer used for classification (see below) — kept only so the
+          debug dump can report the legacy ratio alongside the new one.
+        - hihat_decay_start_seconds / hihat_decay_max_seconds /
+          hihat_next_onset_guard_seconds: the ADAPTIVE sustain window. The
+          decay ratio is measured over [decay_start, min(decay_start +
+          decay_max, gap_to_next_hihat - guard)]. Anchoring the window's end to
+          the next hihat onset is the key fix: a fixed 0.15-0.35 s window
+          straddles the *next* stroke in any groove faster than ~3 hits/sec
+          (i.e. almost all of them), so busy closed 16ths read as "still
+          ringing" and the whole song flips to open. Ending the window before
+          the next stroke measures each hat's own decay at any tempo. When the
+          next stroke lands too soon to leave any window (very fast), the hat is
+          necessarily choked -> ratio 0 (closed).
         - hihat_ratio_clip: cap the late/attack ratio at this value before
           clustering. A small minority of hits have near-zero attack energy
           and produce ratios in the dozens — those outliers would otherwise
@@ -93,6 +118,9 @@ class CheukExpander:
         self._cymbal_window: tuple[float, float] = cymbal_window_seconds
         self._hihat_attack_window: tuple[float, float] = hihat_attack_window_seconds
         self._hihat_late_window: tuple[float, float] = hihat_late_window_seconds
+        self._hihat_decay_start: float = hihat_decay_start_seconds
+        self._hihat_decay_max: float = hihat_decay_max_seconds
+        self._hihat_next_onset_guard: float = hihat_next_onset_guard_seconds
         self._hihat_ratio_clip: float = hihat_ratio_clip
         self._hihat_clearly_tight: float = hihat_clearly_tight
         self._hihat_clearly_loose: float = hihat_clearly_loose
@@ -102,6 +130,9 @@ class CheukExpander:
         self._tom_centroid_band: tuple[float, float] = tom_centroid_band_hz
         self._tom_uniform_spread_hz: float = tom_uniform_spread_hz
         self._tom_min_cluster_gap_hz: float = tom_min_cluster_gap_hz
+        # Populated by the most recent expand() call; the pipeline dumps it when
+        # --debug-dir is set so hi-hat ratio distributions can be inspected/tuned.
+        self.last_hihat_debug: dict | None = None
 
     def expand(
         self,
@@ -138,7 +169,11 @@ class CheukExpander:
         hits: tuple[DrumHit, ...],
         substems: DrumSubStems,
     ) -> dict[int, str]:
-        """Cluster every hihat hit's late/attack RMS ratio and return {hit_index: label}.
+        """Cluster every hihat hit's decay/attack RMS ratio and return {hit_index: label}.
+
+        The decay ratio uses an ADAPTIVE sustain window whose end is clamped to
+        just before the next hihat onset (see __init__), so busy fast grooves no
+        longer alias the next stroke into the "sustain" measurement.
 
         Decision logic:
           - 0 hihat hits → empty mapping.
@@ -151,57 +186,118 @@ class CheukExpander:
           - Otherwise the song's hihat is single-character. Pick a uniform
             label from the median ratio vs `hihat_unimodal_open_threshold`
             (loose songs land on hihat_open; tight songs on hihat_closed).
+
+        Also records per-hit ratios + the decision to `self.last_hihat_debug`.
         """
         a0, a1 = self._hihat_attack_window
-        l0, l1 = self._hihat_late_window
+        l0, l1 = self._hihat_late_window  # legacy fixed window, for the debug dump only
+        d_start = self._hihat_decay_start
+        d_max = self._hihat_decay_max
+        guard = self._hihat_next_onset_guard
 
-        hihat_indices: list[int] = []
-        hihat_ratios: list[float] = []
-        for i, h in enumerate(hits):
-            if h.drum_class != "hihat":
-                continue
-            attack: float = _rms(substems.hihat, h.time + a0, h.time + a1)
-            if attack <= 1e-9:
-                hihat_indices.append(i)
-                hihat_ratios.append(0.0)
-                continue
-            late: float = _rms(substems.hihat, h.time + l0, h.time + l1)
-            hihat_indices.append(i)
-            hihat_ratios.append(late / attack)
-
+        hihat_indices: list[int] = [i for i, h in enumerate(hits) if h.drum_class == "hihat"]
         if not hihat_indices:
+            self.last_hihat_debug = {"n": 0}
             return {}
+
+        # Gap to the next hihat onset (a large default for the final hit so an
+        # isolated last hat still gets a full decay window). Relies on hits being
+        # in ascending time order — guaranteed by the transcriber, which returns
+        # them sorted by (time, class); max(0, gap) below is a belt-and-braces
+        # guard so an out-of-order hit degrades to "choked/closed", never crashes.
+        times: list[float] = [hits[i].time for i in hihat_indices]
+        DEFAULT_GAP = 1.0
+        gaps: list[float] = [
+            (times[k + 1] - times[k]) if k + 1 < len(times) else DEFAULT_GAP
+            for k in range(len(times))
+        ]
+
+        hihat_ratios: list[float] = []
+        per_hit: list[dict] = []
+        for k, i in enumerate(hihat_indices):
+            t = hits[i].time
+            gap = max(0.0, gaps[k])
+            attack: float = _rms(substems.hihat, t + a0, t + a1)
+            decay_end: float = min(d_start + d_max, gap - guard)
+            if attack <= 1e-9 or decay_end <= d_start:
+                ratio = 0.0
+                decay = 0.0
+            else:
+                decay = _rms(substems.hihat, t + d_start, t + decay_end)
+                ratio = decay / attack
+            hihat_ratios.append(ratio)
+            old_late: float = _rms(substems.hihat, t + l0, t + l1)
+            per_hit.append({
+                "time": round(t, 4),
+                "gap": round(gap, 4),
+                "ratio": round(ratio, 4),
+                "ratio_old_fixed": round(old_late / attack, 4) if attack > 1e-9 else 0.0,
+                "decay_end": round(decay_end, 4),
+            })
+
         if len(hihat_indices) == 1:
+            self.last_hihat_debug = {"n": 1, "decision": "single->closed", "hits": per_hit}
+            per_hit[0]["label"] = "hihat_closed"
             return {hihat_indices[0]: "hihat_closed"}
 
         raw: NDArray[np.floating] = np.asarray(hihat_ratios, dtype=np.float64)
         tight_frac: float = float((raw < self._hihat_clearly_tight).mean())
         loose_frac: float = float((raw > self._hihat_clearly_loose).mean())
+        median: float = float(np.median(raw))
 
         is_bimodal: bool = (
             tight_frac >= self._hihat_bimodal_min_fraction
             and loose_frac >= self._hihat_bimodal_min_fraction
         )
 
+        labels_by_index: dict[int, str]
+        decision: str
+        centers_out: list[float] = []
         if not is_bimodal:
-            median: float = float(np.median(raw))
             label: str = (
                 "hihat_open" if median > self._hihat_unimodal_open_threshold
                 else "hihat_closed"
             )
-            return {i: label for i in hihat_indices}
+            decision = f"unimodal->{'open' if label == 'hihat_open' else 'closed'}"
+            labels_by_index = {i: label for i in hihat_indices}
+            for h in per_hit:
+                h["label"] = label
+        else:
+            clipped: NDArray[np.floating] = np.clip(raw, 0.0, self._hihat_ratio_clip)
+            centers, assignments = _kmeans_1d(clipped, k=2)
+            order: NDArray[np.intp] = np.argsort(centers)
+            centers_out = [float(centers[int(o)]) for o in order]
+            cluster_to_label: dict[int, str] = {
+                int(order[0]): "hihat_closed",
+                int(order[1]): "hihat_open",
+            }
+            decision = "bimodal->kmeans"
+            labels_by_index = {
+                hihat_indices[i]: cluster_to_label[int(a)]
+                for i, a in enumerate(assignments)
+            }
+            for j, a in enumerate(assignments):
+                per_hit[j]["label"] = cluster_to_label[int(a)]
 
-        clipped: NDArray[np.floating] = np.clip(raw, 0.0, self._hihat_ratio_clip)
-        centers, assignments = _kmeans_1d(clipped, k=2)
-        order: NDArray[np.intp] = np.argsort(centers)
-        cluster_to_label: dict[int, str] = {
-            int(order[0]): "hihat_closed",
-            int(order[1]): "hihat_open",
+        n_open = sum(1 for lab in labels_by_index.values() if lab == "hihat_open")
+        self.last_hihat_debug = {
+            "n": len(hihat_indices),
+            "decision": decision,
+            "median_ratio": round(median, 4),
+            "tight_frac": round(tight_frac, 3),
+            "loose_frac": round(loose_frac, 3),
+            "kmeans_centers": [round(c, 4) for c in centers_out],
+            "n_open": n_open,
+            "n_closed": len(hihat_indices) - n_open,
+            "thresholds": {
+                "clearly_tight": self._hihat_clearly_tight,
+                "clearly_loose": self._hihat_clearly_loose,
+                "bimodal_min_fraction": self._hihat_bimodal_min_fraction,
+                "unimodal_open_threshold": self._hihat_unimodal_open_threshold,
+            },
+            "hits": per_hit,
         }
-        return {
-            hihat_indices[i]: cluster_to_label[int(a)]
-            for i, a in enumerate(assignments)
-        }
+        return labels_by_index
 
     def _assign_tom_labels(
         self,

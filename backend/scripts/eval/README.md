@@ -12,16 +12,35 @@ accuracy regressions and validating v2 stages, not for CI.
 ```
 backend/scripts/eval/
 ├── README.md                                              this file
-├── compare_treble_charger_brand_new_low.py                comparison script (one per song)
+├── _harness.py                                            shared tab parser + DP alignment + scoring/report
+├── compare_treble_charger_brand_new_low.py                comparison script (self-contained; pre-dates _harness)
+├── compare_the_trammps_disco_inferno.py                   hi-hat open/closed discriminator (uses _harness)
+├── compare_a_taste_of_honey_boogie_oogie_oogie.py         closed-dominant hi-hat anchor (uses _harness)
 ├── reference_tabs/
-│   └── treble-charger-brand-new-low.txt                   the raw tab text from the user
+│   ├── treble-charger-brand-new-low.txt                   the raw tab text from the user
+│   ├── the-trammps-disco-inferno.txt                      section map + provenance notes
+│   └── a-taste-of-honey-boogie-oogie-oogie.txt            section map + provenance notes
 └── baselines/
-    └── treble-charger-brand-new-low.v1.events.json        v1 pipeline output snapshot for delta measurement
+    └── *.events.json                                      pipeline output snapshots for delta measurement
 ```
 
 One script per song. Each script hard-codes the corresponding tab's bar-by-bar
 encoding (repeat markers, alt endings, section labels) so adding a new song is
-a manual transcription exercise — there's no general tab parser.
+a manual transcription exercise — there's no general tab parser. Newer scripts
+import the shared scoring machinery from `_harness.py` (which was extracted
+verbatim from the Treble Charger script) and only supply their own `build_tab()`
+plus a `SOURCE` string, calling `run_report(build_tab, SOURCE)`.
+
+### Hi-hat open/closed reference songs (added for the CheukExpander tuning)
+
+`the-trammps-disco-inferno` and `a-taste-of-honey-boogie-oogie-oogie` were added
+specifically to measure the open/closed hi-hat split (run with `--full-vocab`).
+Their **hi-hat mode per section is authoritative** (noteheads read at high zoom:
+plain-x = closed, circled-x = open); kick/snare are encoded as the song's
+foundation (four-on-the-floor + backbeat) — good enough for bar-alignment but not
+a note-perfect transcription, so treat their kick/snare F1 as indicative only.
+Their reference PDFs (Drumeo, "Licensed For Personal Use Only") are **not
+committed** — only the derived per-section hit patterns live in the scripts.
 
 ## Running
 
