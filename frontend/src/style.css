@@ -15,6 +15,9 @@
   --wobble-lg: 255px 15px 225px 15px / 15px 225px 15px 255px;
   --sticker: 3px 3px 0 rgba(45, 226, 255, 0.85);
   --sticker-sm: 2px 2px 0 rgba(45, 226, 255, 0.85);
+  /* Height the sticky project top bar occupies — used to offset anything that
+     scrolls beneath it (the player column, and the score's scroll-into-view). */
+  --topbar-offset: 3.75rem;
   font-family: var(--font-body);
   color-scheme: dark;
 }
@@ -200,8 +203,9 @@ button:disabled {
 }
 
 .bar-row {
-  /* Leave a little gap above when the active bar is scrolled to the top. */
-  scroll-margin-top: 14px;
+  /* Clear the sticky top bar when the playhead scrolls the active bar to the
+     top — otherwise the row lands behind the header and is hidden. */
+  scroll-margin-top: var(--topbar-offset);
   /* Let the grid cell shrink below the SVG's intrinsic 800px so bars scale
      down to fit two-per-row instead of overflowing. */
   min-width: 0;
@@ -391,7 +395,7 @@ button.ghost:hover {
    sticky top bar so the two don't overlap. */
 .project-left {
   position: sticky;
-  top: 3.75rem;
+  top: var(--topbar-offset);
   flex: 0 0 360px;
   width: 360px;
   align-self: flex-start;
