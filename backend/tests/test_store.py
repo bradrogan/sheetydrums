@@ -93,3 +93,61 @@ def test_save_invalid_notation_raises(tmp_store: Any) -> None:
     with pytest.raises(Exception):
         store.save_project(bad)
     assert store.load_project("abc12345678") is None  # nothing persisted
+
+
+def test_save_is_atomic_no_tmp_left_behind(tmp_store: Any) -> None:
+    store.save_project(_project())
+    # A successful save leaves exactly the project JSON — no stray temp files.
+    leftovers = [p.name for p in tmp_store.iterdir() if p.suffix == ".tmp" or ".tmp." in p.name]
+    assert leftovers == []
+
+
+def test_resave_preserves_old_file_on_write_failure(tmp_store: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    first = store.save_project(_project(title="Original"))
+    # Simulate a crash during the temp-file write; the previously-saved project
+    # must remain intact (atomic write never truncates the live file).
+    def boom(*_a: Any, **_k: Any) -> None:
+        raise OSError("disk full")
+    monkeypatch.setattr(store.os, "replace", boom)
+    with pytest.raises(OSError):
+        store.save_project(_project(title="Doomed"))
+    loaded = store.load_project("abc12345678")
+    assert loaded is not None and loaded["source"]["title"] == "Original"
+    assert loaded["created_at"] == first["created_at"]
+    # No half-written temp file survives the failure.
+    assert [p.name for p in tmp_store.iterdir() if ".tmp." in p.name] == []
+
+
+def test_append_and_read_events(tmp_store: Any) -> None:
+    store.append_event("abc12345678", "edits", {"op": "reclassify", "bar": 12})
+    store.append_event("abc12345678", "edits", {"op": "delete", "bar": 13})
+    events = store.read_events("abc12345678", "edits")
+    assert [e["op"] for e in events] == ["reclassify", "delete"]  # append order
+    assert all(e["at"] for e in events)  # timestamp stamped
+
+
+def test_read_events_missing_is_empty(tmp_store: Any) -> None:
+    assert store.read_events("abc12345678", "edits") == []
+
+
+def test_read_events_skips_torn_final_line(tmp_store: Any) -> None:
+    store.append_event("abc12345678", "feedback", {"accepted": True})
+    # Simulate a crash mid-append that left a truncated JSON line.
+    with open(store.event_log_path("abc12345678", "feedback"), "a", encoding="utf-8") as f:
+        f.write('{"accepted": fal')
+    events = store.read_events("abc12345678", "feedback")
+    assert len(events) == 1 and events[0]["accepted"] is True
+
+
+def test_delete_removes_logs(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.append_event("abc12345678", "edits", {"op": "add"})
+    assert store.event_log_path("abc12345678", "edits").exists()
+    store.delete_project("abc12345678")
+    assert not store.event_log_path("abc12345678", "edits").exists()
+
+
+@pytest.mark.parametrize("bad_name", ["with-dash", "with space", "", "a.b", "../x"])
+def test_invalid_log_name_rejected(tmp_store: Any, bad_name: str) -> None:
+    with pytest.raises(ValueError):
+        store.event_log_path("abc12345678", bad_name)
