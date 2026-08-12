@@ -6,7 +6,10 @@ each Protocol.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import asdict
+from pathlib import Path
 
+from sheetydrums.cache import StageCache, stage_key
 from sheetydrums.config import CLIConfig
 from sheetydrums.debug import DebugSink
 from sheetydrums.device import downstream_device
@@ -23,10 +26,23 @@ from sheetydrums.stages import (
 )
 
 
+def stage_keys(config: CLIConfig, params: PipelineParams) -> dict[str, str]:
+    """The cache key for each persisted stage, chained so a change cascades to
+    everything downstream (the cache dir is per-video, so the mix is implicit)."""
+    drums = stage_key("drums", asdict(params.separation))
+    return {
+        "drums": drums,
+        "substems": stage_key("substems", drums, config.use_drumsep),
+        "hits_raw": stage_key("hits_raw", drums, asdict(params.transcription)),
+        "grid_raw": stage_key("grid_raw"),  # + beats params once they're tunable
+    }
+
+
 def build_pipeline(
     config: CLIConfig,
     *,
     params: PipelineParams | None = None,
+    cache_dir: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> Pipeline:
     """Construct a Pipeline wired with the implementations chosen by `config`.
@@ -38,6 +54,9 @@ def build_pipeline(
     `on_progress`, if given, is fed each stage's log line; independent of
     `config.verbose` (which only controls stderr printing). The HTTP server
     uses it to stream pipeline progress over SSE.
+
+    `cache_dir`, if given, enables the per-stage output cache (see cache.py) so a
+    param change re-runs only the affected stages. None → caching off.
     """
     params = params or PipelineParams()
     downstream: str = downstream_device()
@@ -54,6 +73,7 @@ def build_pipeline(
         quantizer=StubQuantizer(**overrides(params.quantize)),
         substem_branch=substem_branch,
         debug_sink=DebugSink(config.debug_dir),
+        stage_cache=StageCache(cache_dir, stage_keys(config, params)),
         verbose=config.verbose,
         on_progress=on_progress,
     )

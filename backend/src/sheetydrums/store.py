@@ -81,6 +81,13 @@ def has_drumless(video_id: str) -> bool:
     return drumless_path(video_id).exists()
 
 
+def stages_dir(video_id: str) -> Path:
+    """Directory holding a project's cached per-stage artifacts (may not exist
+    yet). See `cache.StageCache`."""
+    _check_video_id(video_id)
+    return _STORE_DIR / f"{video_id}.stages"
+
+
 def load_project(video_id: str) -> dict[str, Any] | None:
     """Return the full project dict, or None if it doesn't exist."""
     path = _path_for(video_id)
@@ -111,11 +118,16 @@ def save_project(project: dict[str, Any]) -> dict[str, Any]:
 
 
 def delete_project(video_id: str) -> bool:
-    """Delete a project (its JSON + any append-only logs; cached audio stays).
-    Returns True if the project JSON was removed."""
+    """Delete a project (its JSON, append-only logs, and cached stage artifacts;
+    the drum-stem/drumless audio stays). Returns True if the JSON was removed."""
+    import shutil
+
     path = _path_for(video_id)
     for log in _STORE_DIR.glob(f"{video_id}.*.jsonl"):
         log.unlink(missing_ok=True)
+    sdir = stages_dir(video_id)
+    if sdir.exists():
+        shutil.rmtree(sdir, ignore_errors=True)
     if not path.exists():
         return False
     path.unlink()

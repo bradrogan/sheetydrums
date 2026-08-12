@@ -12,6 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from sheetydrums.audio import AudioBuffer, load_audio
+from sheetydrums.cache import StageCache
 from sheetydrums.debug import DebugSink
 from sheetydrums.phase_correct import correct_downbeat_phase
 from sheetydrums.interfaces import (
@@ -40,6 +41,7 @@ class Pipeline:
         quantizer: Quantizer,
         substem_branch: SubStemBranch | None = None,
         debug_sink: DebugSink | None = None,
+        stage_cache: StageCache | None = None,
         verbose: bool = True,
         on_progress: Callable[[str], None] | None = None,
     ) -> None:
@@ -49,6 +51,8 @@ class Pipeline:
         self._quantizer: Quantizer = quantizer
         self._substem_branch: SubStemBranch | None = substem_branch
         self._debug: DebugSink = debug_sink if debug_sink is not None else DebugSink(None)
+        # Disabled cache by default → every stage recomputes (today's behaviour).
+        self._cache: StageCache = stage_cache if stage_cache is not None else StageCache(None, {})
         self._verbose: bool = verbose
         self._on_progress: Callable[[str], None] | None = on_progress
 
@@ -62,7 +66,7 @@ class Pipeline:
         self._log(f"loaded {audio_path.name}: {mix.duration_seconds:.2f}s @ {mix.sample_rate} Hz")
         self._debug.write_audio_placeholder("input-mix", mix)
 
-        drums: AudioBuffer = self._separator.separate(mix)
+        drums: AudioBuffer = self._cache.audio("drums", lambda: self._separator.separate(mix))
         self._log(f"[separator:{self._separator.name}] drum stem: {drums.duration_seconds:.2f}s")
         self._debug.write_audio_placeholder(f"separator-{self._separator.name}", drums)
 
@@ -82,7 +86,9 @@ class Pipeline:
             save_audio(drumless_path, subtract_stem(mix, drums))
             self._log(f"[stem] wrote drumless mix → {drumless_path.name}")
 
-        hits: tuple[DrumHit, ...] = self._transcriber.transcribe(drums)
+        hits: tuple[DrumHit, ...] = self._cache.hits(
+            "hits_raw", lambda: self._transcriber.transcribe(drums)
+        )
         self._log(
             f"[transcriber:{self._transcriber.name}] {len(hits)} hits, "
             f"vocab={self._transcriber.vocabulary}"
@@ -93,7 +99,8 @@ class Pipeline:
         )
 
         if self._substem_branch is not None:
-            substems = self._substem_branch.separator.separate(drums)
+            branch = self._substem_branch
+            substems = self._cache.substems("substems", lambda: branch.separator.separate(drums))
             self._log(f"[substem:{self._substem_branch.separator.name}] 6 sub-stems extracted")
             self._debug.write_text(
                 f"substem-{self._substem_branch.separator.name}",
@@ -119,7 +126,9 @@ class Pipeline:
                     hihat_dbg,
                 )
 
-        grid: BeatGrid = self._beat_tracker.track(mix)
+        # Cache Beat This!'s raw output (skips the model on re-runs); the cheap
+        # kick-driven phase correction below always re-runs from the cached grid.
+        grid: BeatGrid = self._cache.grid("grid_raw", lambda: self._beat_tracker.track(mix))
         # Downbeat-phase correction: Beat This! can place downbeats off-phase
         # in songs with sparse intros or strong backbeats. Use kick locations
         # to rotate the downbeat labels onto the beats kicks actually land on.

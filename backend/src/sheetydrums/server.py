@@ -179,7 +179,12 @@ def _run_job(job: JobState, url: str, use_drumsep: bool) -> None:
         # Default params for now; the tuning loop will vary + persist these so a
         # project records exactly the params that produced its notation.
         params = PipelineParams()
-        pipeline = build_pipeline(config, params=params, on_progress=on_progress)
+        pipeline = build_pipeline(
+            config,
+            params=params,
+            cache_dir=store.stages_dir(downloaded.video_id),
+            on_progress=on_progress,
+        )
         result = pipeline.transcribe(
             downloaded.path,
             drum_stem_path=store.stem_path(downloaded.video_id),
