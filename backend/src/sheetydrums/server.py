@@ -157,6 +157,7 @@ def _run_job(job: JobState, url: str, use_drumsep: bool) -> None:
     from sheetydrums.config import CLIConfig
     from sheetydrums.factory import build_pipeline
     from sheetydrums.fetch import download_audio
+    from sheetydrums.params import PipelineParams
 
     def on_progress(msg: str) -> None:
         job.progress.put(msg)
@@ -175,7 +176,10 @@ def _run_job(job: JobState, url: str, use_drumsep: bool) -> None:
 
         on_progress(f"loading pipeline (use_drumsep={use_drumsep})…")
         config: CLIConfig = CLIConfig(use_drumsep=use_drumsep, verbose=False)
-        pipeline = build_pipeline(config, on_progress=on_progress)
+        # Default params for now; the tuning loop will vary + persist these so a
+        # project records exactly the params that produced its notation.
+        params = PipelineParams()
+        pipeline = build_pipeline(config, params=params, on_progress=on_progress)
         result = pipeline.transcribe(
             downloaded.path,
             drum_stem_path=store.stem_path(downloaded.video_id),
@@ -191,6 +195,7 @@ def _run_job(job: JobState, url: str, use_drumsep: bool) -> None:
                     "title": downloaded.title,
                 },
                 "notation": notation,
+                "params": params.to_dict(),
             }
         )
         job.result = project
