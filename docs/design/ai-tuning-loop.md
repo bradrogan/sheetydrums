@@ -21,11 +21,12 @@ Design decisions locked with the user (2026-08):
 - **Parameterize every knob that meaningfully affects transcription quality** (full catalog below).
 - **Local, open-source LLM** so the feature is free to run for the user (no per-call cost).
 - **Suggestion = LLM + automated parameter search scored against the user's edits** (LLM narrows the space; search guarantees improvement).
-- **Input allows bar and note selection** on the score, not just free text.
+- **Interaction is correct-by-example (approach B), only.** The user makes corrections *inside a declared selection* (an instrument lane × bar range) and marks it **verified**; a **"Fix the rest of the song for this"** action generalises it across the whole song. No complaint text box, chips, or per-selection prompts in v1 — those (approaches A/C from the interface critique) can be layered on later if a correction is ever awkward to express as an edit.
+- **Corrections live inside a verified selection, not on loose notes.** A verified selection is a *closed-world, fully-labelled patch*: every note in it is ground truth — the ones the user changed **and** the ones they left. That gives the search both positive and negative labels over a bounded region, so "reproduce this" is unambiguous (a lone note edit is a single positive label — ill-posed to generalise from). A single-note selection is allowed but treated as a weak signal; the UI nudges the user to select the range they actually verified.
+- **Edit provenance is two-layer with strict precedence.** Every change is tagged `user` or `system` (a "fix the rest" pass). **User edits are inviolable; system edits are replaceable.** A system pass never overwrites a user edit; a later system pass supersedes the earlier one. A "fix the rest" pass is previewed as a delta and committed only on the user's OK.
 
-Provisional (recommended defaults, revisit during build):
-- **AI autonomy:** suggest-and-approve — nothing re-runs until the user clicks Apply.
-- **Edit handling on re-gen:** replay edits by anchor and **flag conflicts** that no longer map.
+Provisional (revisit during build):
+- **Edit handling on re-gen:** user ops replay by anchor + lock; the system layer is regenerated, not replayed (see block 6).
 
 ## Current state and the gap
 
@@ -39,25 +40,25 @@ What already exists and is reusable:
 ## Architecture overview
 
 ```
-        ┌─────────────────────────── score view (frontend) ───────────────────────────┐
-        │  select bars/notes ──▶ complaint text ──▶ "Refine" panel                      │
+        ┌─────────────────────────── score view (frontend, edit mode) ────────────────┐
+        │  select lane×bars, correct + mark VERIFIED ──▶ "Fix the rest of the song"     │
         └───────────────┬──────────────────────────────────────────────────────────────┘
-                        │ {complaint, selection, project_id}
+                        │ {verified selection (labelled patch), project_id}
                         ▼
    ┌────────────────────────────────────────────────────────────────────────┐
-   │ Suggester service                                                        │
-   │  1. diagnose(project, selection) ─────────────▶ structured diagnostics   │
-   │  2. local LLM: (complaint + diagnostics + param catalog)                 │
+   │ "Fix the rest" pass                                                      │
+   │  1. diagnose(project, correction-scope) ──────▶ structured diagnostics   │
+   │  2. pick knobs: which-stage heuristic (P3) / local LLM (P4)              │
    │        ─────────────▶ {candidate knobs, directions, search bounds}       │
    │  3. param search over those knobs, each candidate:                       │
    │        re-run only affected stages (cached upstream) ─▶ notation         │
-   │        score vs user edits (+ complaint objective) on the selection      │
-   │        ─────────────▶ best-scoring params + before/after                 │
+   │        score vs the user's correction (reproduce it + generalise)        │
+   │        ─────────────▶ best params + system-layer delta                   │
    └───────────────────────────────┬──────────────────────────────────────────┘
-                                    │ proposed params + preview
+                                    │ preview delta (system colour)
                                     ▼
-                        user Applies ▶ commit new version (params, notation,
-                                        edits-applied, diagnostics)
+              user OKs ▶ commit as a superseding system layer + new version
+                         (user edits stay locked on top; see block 6)
 ```
 
 Because upstream stage outputs are cached (below), step 3 evaluates each candidate
@@ -168,30 +169,60 @@ grid depends on `transcription` params too — encode that edge in the DAG.
 - heuristic flags: "kick on ~every 16th → over-detection", "section with 0 hats", "ride present but only on down-beats", "hi-hat all-open / all-closed".
 - when `selection` is set, all of the above **restricted to the selected bars/instruments**.
 
-## Building block 4 — complaint input with bar/note selection
+## Building block 4 — interaction: correct-by-example ("fix the rest of the song")
 
-Frontend "Refine" panel on the score view:
-- The user can marquee/click-select bars and/or individual notes (extends the existing edit-mode selection in `edit.ts`).
-- The selection is sent as `{bars: [...], notes: [{bar, sixteenth, instrument}], text: "…"}`.
-- Selection scopes **both** the diagnostics (block 3) **and** the search objective (block 5) — e.g. "only score agreement on hi-hats in bars 41–56", which is far more targeted than a whole-song objective.
+The only v1 interaction (approach B from the interface critique; A/C deferred):
+
+1. In **edit mode**, the user makes a **selection** — an instrument lane × bar
+   range (e.g. the hi-hat lane, bars 89–100), adjustable on both edges.
+2. They correct the notes inside it with the existing `edit.ts` affordances (or
+   leave already-correct notes as-is) and mark the selection **verified**. The
+   whole verified selection is a **user edit** (block 6 provenance) — a
+   closed-world, fully-labelled patch: every note in it is ground truth, the ones
+   they changed *and* the ones they left.
+3. A launcher in the bottom-left slot (replacing the `#poo-doodle` while in edit
+   mode) surfaces **"Fix the rest of the song for this"**, scoped to the verified
+   selection — its instrument lane and the pattern it exhibits.
+4. That runs the edit-scored search (block 5) with the verified selection as the
+   ground-truth objective, finds the params/labels that reproduce it, and applies
+   the same fix to similar passages elsewhere as **system edits**.
+5. The result is shown as a **preview delta** (block 6 → "Seeing the delta")
+   before commit; the user OKs or discards.
+
+**Why a selection, not a loose note.** A single note edit is one *positive* label
+— ambiguous to generalise from (what's the scope? which nearby notes are
+correctly *un*-changed?). A verified selection carries both positive and negative
+labels over a bounded region, so "reproduce this" is well-posed and the search can
+learn the pattern in context ("offbeats open, downbeats closed *here*") instead of
+overfitting one note. A single-note selection is allowed but is a weak signal; the
+UI nudges toward selecting the range actually verified.
+
+There is no free-text complaint box, chips, or per-selection prompt in v1 — the
+verified selection *is* the input, so there is nothing to type or bind. (If
+corrections ever arise that are awkward to express as an edit — "it's dropping the
+ride on every off-beat" — the chip-based chat can be added as approach A/C.)
 
 ## Building block 5 — suggestion = local LLM + edit-scored param search
 
 Two-stage, exactly as decided:
 
-**(a) LLM narrows the space.** The local model (below) receives `{complaint, selection-scoped diagnostics, param catalog}` and returns a **structured** proposal:
+**(a) LLM narrows the space.** The local model (below) receives `{the user's correction (edit ops), scoped diagnostics, param catalog}` and returns a **structured** proposal:
 ```json
 { "knobs": ["expander.hihat_unimodal_open_threshold", "expander.hihat_decay_max"],
   "directions": {"...": "increase"}, "bounds": {"...": [0.3, 0.7]},
-  "rationale": "complaint says too many open hats in a fast groove; …" }
+  "rationale": "user reclassified these hi-hats closed→open in a fast groove; …" }
 ```
-Output is constrained to a JSON schema (grammar-constrained decoding) so parsing is reliable. The LLM does **not** pick final values — it picks *which* knobs and roughly which direction, keeping the search low-dimensional.
+Output is constrained to a JSON schema (grammar-constrained decoding) so parsing is reliable. The LLM does **not** pick final values — it picks *which* knobs and roughly which direction, keeping the search low-dimensional. (Phase 3 ships this stage as a which-stage heuristic; Phase 4 swaps in the LLM.)
 
 **(b) Automated search verifies + optimises.** Over just those knobs, run a small search (coordinate descent / a coarse grid, then local refine; ≤ ~20–40 candidates). Each candidate:
 1. sets params, re-runs only the affected stages (cheap, cached upstream),
-2. scores the resulting notation against the **objective**:
-   - **ground truth = the user's manual edits** (treat each edit as a label), matched with the eval harness's bipartite matcher, restricted to the selection;
-   - plus a **complaint-derived term** when there are few/no edits yet (e.g. "reduce open-hat count in the selection" → penalise open-hat hits there), so the loop works before the user has hand-corrected much.
+2. scores the resulting notation against the **objective** — agreement with the
+   **verified selection**, whose every note (changed and unchanged) is a label,
+   matched with the eval harness's bipartite matcher: (i) it must **reproduce**
+   the whole selection (both the positive and negative labels — so it can't just
+   flip everything), and (ii) a coverage term rewards applying the same pattern to
+   *similar* passages elsewhere (the "fix the rest" generalisation). The verified
+   selection is always present as ground truth, so there is no cold-start.
 3. keep the best-scoring candidate.
 
 Return the best params + a before/after preview. Because every candidate eval is a
@@ -226,6 +257,38 @@ ground truth block 5 scores against — one artifact, two uses.
 "Optionally preserve" = per-re-run choice: replay-all / replay-with-conflict-review /
 take-the-fresh-generation-clean.
 
+### Edit provenance & precedence (user vs system)
+
+Every op carries an `origin`:
+- `user` — a manual edit inside a **verified selection**. **Inviolable**, highest precedence, accumulates and persists. A verified selection locks its *entire* lane × bar range as user-owned (not just the touched notes) — a clean precedence boundary: a system pass may not write anywhere inside a verified region.
+- `system` — applied by a "fix the rest of the song" pass. **Replaceable**, tagged with the `pass_id` that produced it.
+
+Effective notation is layered **base generation → system layer → user layer** (user
+applied last, so it always wins). Directly from the locked requirements:
+- **A system pass never writes inside a verified selection.** The whole lane × bar
+  range of every verified selection is user-owned and excluded before the pass
+  applies. (It's also the ground truth the pass reproduces, so it should agree
+  there regardless.)
+- **A later system pass supersedes the earlier one.** Each "fix the rest" pass
+  recomputes the *whole* system layer from the current base + user edits and
+  replaces the previous system layer wholesale (keyed by `pass_id`) — system edits
+  are never cumulative-immutable, the latest pass wins.
+- On **re-generation** (param change / pipeline re-run): user ops replay + lock (as
+  above); the system layer is **regenerated** by re-running the pass against the new
+  base, not replayed — consistent with "system overwritten by subsequent system".
+
+### Seeing the delta
+
+A "fix the rest" pass is a reviewable **delta** before commit and stays visually
+distinct after:
+- Preview highlights every note the pass adds/removes/reclassifies in a **system**
+  colour, distinct from the **user-edit** colour and the untouched base — so at a
+  glance it's obvious what the machine changed vs what you changed.
+- The change log groups by origin: user edits listed individually (permanent); each
+  system pass as one collapsible group (its whole delta), replaceable/removable as a
+  unit. Undoing a system pass reverts only its layer, never a user edit.
+- Accept/undo a pass as a unit (per-region accept is a later nicety, not v1).
+
 ## Building block 7 — versioning
 
 Each generation is an immutable snapshot: `{params, notation, edits_applied,
@@ -244,33 +307,37 @@ Recommendation:
 - **Serving: [Ollama](https://ollama.com)** — one-command local server on macOS with Metal acceleration, OpenAI-compatible `/v1/chat/completions`, easy model pulls, and **structured-output/JSON-schema support** (`format`) for grammar-constrained decoding. Alternatives: `llama.cpp` server, LM Studio.
 - **Model: Qwen2.5-Instruct 7B or 14B** (Apache-2.0) — strong tool-use/JSON adherence, runs well quantized (GGUF Q4/Q5) on Apple Silicon. Use **14B** if the machine has ≥ 32 GB unified memory, else **7B**. Fallback: Llama-3.1-8B-Instruct.
 - Constrain the response to the proposal JSON schema so parsing never depends on prose.
-- Put it behind an `LLMSuggester` interface (`propose(complaint, diagnostics, catalog) -> Proposal`) with an Ollama implementation as default, so a hosted model can be swapped in for evaluation without touching the loop.
+- Put it behind an `LLMSuggester` interface (`propose(correction, diagnostics, catalog) -> Proposal`) with an Ollama implementation as default, so a hosted model can be swapped in for evaluation without touching the loop.
 
-**Re-validate the specific model at build time** — the local-model landscape moves fast; pick by the selection criteria above against whatever is current, benchmarking on a handful of real complaint→knob cases from `scripts/eval/`.
+**Re-validate the specific model at build time** — the local-model landscape moves fast; pick by the selection criteria above against whatever is current, benchmarking on a handful of real correction→knob cases from `scripts/eval/`.
 
 Tradeoffs: first pull is a few GB; Metal inference is slower than a hosted frontier model but fine for a single suggestion call per complaint. The compute-heavy part (the param search) uses **no** LLM — it's cached re-runs + scoring.
 
 ## UX flow
 
-1. Score view → "Refine" panel. User selects bars/notes, types the complaint.
-2. Panel shows: diagnosis (from diagnostics), the proposed change in plain English + a collapsible param diff, and — once the search runs — the before/after score delta on the selection.
-3. `[Apply & re-run]` (default: suggest-then-approve). Toggle `[Keep my edits ✓]`.
-4. Re-run (fast, cached) → new score with added/removed/changed notes highlighted; conflicts from edit-replay listed.
-5. `[Accept]` saves a new version / `[Discard]` reverts / keep chatting to iterate.
+1. In edit mode, the user selects a lane × bar range (e.g. hi-hat, bars 89–100), corrects the notes inside it, and marks it **verified**. The bottom-left slot (where the poo-doodle sits) shows **"Fix the rest of the song for this."**
+2. Clicking it runs the edit-scored search (block 5) with the verified selection as ground truth, then shows a **preview delta** — every note it would change, in the *system* colour, distinct from *user* edits and untouched notes.
+3. `[Apply]` commits the pass as a **system layer** (replaceable) / `[Discard]` drops it. User edits are never touched.
+4. Iterate: fix another spot → "fix the rest" again. The new pass **supersedes** the previous system layer; user edits persist and stay locked.
+5. Each committed state is a version (block 7); the change log lists user edits and system passes separately.
 
 ## Data-model changes (project record)
 
-Add to each project JSON: `params` (block 1), `edits` (block 6 op log), `versions`
-(block 7 list, or a sibling directory). Stage-cache artifacts live under
-`~/.cache/sheetydrums/projects/<video_id>/stages/`.
+Add to each project JSON: `params` (block 1); the user layer as a list of
+**verified selections** (each a lane × bar range + the corrected notes inside it —
+these lock their region and are the search's ground truth); a `system` layer of
+ops tagged with the `pass_id` that produced them (block 6); and `versions`
+(block 7). Stage-cache artifacts live under
+`~/.cache/sheetydrums/projects/<video_id>/stages/`. Effective notation is derived by
+layering base → system (latest pass) → user (verified selections win).
 
 ## Phasing
 
 - **Phase 0** — `PipelineParams` threading + stage caching + re-run DAG. *(Independently valuable; also the prerequisite for everything else. Makes all re-runs cheap.)*
 - **Phase 1** — diagnostics summary + a manual params panel (tweak a knob, re-run, before/after diff). Validates caching + re-run + diff UX with no AI.
-- **Phase 2** — bar/note selection input + the edit-scored param **search** (still no LLM: a "which knob?" dropdown drives the search). Proves the search + scoring.
-- **Phase 3** — the local **LLM** front-end that turns a free-text complaint into the search's starting knobs/directions.
-- **Phase 4** — operations log + anchor-replay + conflict surfacing + "keep edits" toggle; wire edits in as the search's ground truth.
+- **Phase 2** — **verified selections** as the user layer + `user`/`system` provenance + the base→system→user layering/precedence + the delta preview (block 6). The foundation "fix the rest" writes into.
+- **Phase 3** — **"Fix the rest of the song for this"** (approach B end-to-end): a verified selection drives the edit-scored **search** (block 5), applied as a superseding system layer. Still no LLM — the selection + a which-stage heuristic pick the knobs.
+- **Phase 4** — the local **LLM** replaces the heuristic: from the correction + scoped diagnostics it narrows the search's starting knobs/directions.
 - **Phase 5** — versioning UI (diff/revert).
 
 ## Evidence: the global vs per-song boundary (measured 2026-08)
