@@ -30,9 +30,17 @@ class DemucsSeparator:
     """Demucs htdemucs_ft mix separator. Returns the drums stem."""
     name: str = f"demucs-{_MODEL_NAME}"
 
-    def __init__(self, device: str | None = None, progress: bool = False) -> None:
+    def __init__(
+        self,
+        device: str | None = None,
+        progress: bool = False,
+        model: str | None = None,
+        shifts: int | None = None,
+    ) -> None:
         self._device: str = device if device is not None else best_device()
         self._progress: bool = progress
+        self._model_name: str = model or _MODEL_NAME
+        self._shifts: int | None = shifts  # None → apply_model's default
         self._model: Any = None  # lazy
 
     def separate(self, mix: AudioBuffer) -> AudioBuffer:
@@ -46,6 +54,7 @@ class DemucsSeparator:
                 device=self._device,
                 progress=self._progress,
                 split=True,
+                **({"shifts": self._shifts} if self._shifts is not None else {}),
             )
 
         # sources shape: (batch=1, n_sources, channels, samples)
@@ -61,7 +70,7 @@ class DemucsSeparator:
 
     def _ensure_model(self) -> Any:
         if self._model is None:
-            model = get_model(_MODEL_NAME)
+            model = get_model(self._model_name)
             model.to(self._device)
             model.eval()
             self._model = model

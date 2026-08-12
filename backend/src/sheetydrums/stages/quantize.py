@@ -67,6 +67,9 @@ def _to_schema_class(c: DrumClass) -> SchemaDrumClass:
 class StubQuantizer:
     name: str = "16th-snap"
 
+    def __init__(self, subdivisions_per_whole: int = _SUBDIVISIONS_PER_WHOLE) -> None:
+        self._subdivisions_per_whole: int = subdivisions_per_whole
+
     def quantize(
         self,
         hits: tuple[DrumHit, ...],
@@ -84,7 +87,7 @@ class StubQuantizer:
         )
         # Maximum schema-valid position-in-16ths inside one bar.
         # 4/4: 16 (positions 0..15); 3/4: 12 (positions 0..11).
-        max_subdivisions: int = round(bar_in_whole_notes * _SUBDIVISIONS_PER_WHOLE)
+        max_subdivisions: int = round(bar_in_whole_notes * self._subdivisions_per_whole)
 
         # Per-bar actual durations from downbeat positions. The last bar has
         # no following downbeat, so we use the median of the others — a
@@ -113,7 +116,7 @@ class StubQuantizer:
             offset: float = hit.time - bar_start
             position_frac: float = offset / bar_duration  # fraction of this bar
             position_in_whole_notes: float = position_frac * bar_in_whole_notes
-            snapped: int = round(position_in_whole_notes * _SUBDIVISIONS_PER_WHOLE)
+            snapped: int = round(position_in_whole_notes * self._subdivisions_per_whole)
 
             # Off-by-one fix: if the rounded position equals a full bar's worth
             # of subdivisions, the hit is musically the next bar's downbeat
@@ -127,7 +130,7 @@ class StubQuantizer:
                     snapped = max_subdivisions - 1
             snapped = max(0, snapped)
 
-            position: Fraction = Fraction(snapped, _SUBDIVISIONS_PER_WHOLE)
+            position: Fraction = Fraction(snapped, self._subdivisions_per_whole)
             instrument: SchemaDrumClass = _to_schema_class(hit.drum_class)
             bar_notes[bar_idx].append(
                 Note(
