@@ -275,6 +275,18 @@ async def get_project(video_id: str) -> dict[str, Any]:
     }
 
 
+@app.get("/projects/{video_id}/diagnose")
+async def diagnose_project(video_id: str) -> dict[str, Any]:
+    """Structured diagnostics for the project's current notation (per-class
+    counts, hi-hat balance, confidence, empty bars, heuristic flags)."""
+    from sheetydrums.diagnostics import diagnose
+
+    project = store.load_project(video_id)
+    if project is None:
+        raise HTTPException(404, f"No project for video_id {video_id!r}")
+    return diagnose(project.get("notation") or {})
+
+
 @app.get("/projects/{video_id}/drums.wav")
 async def get_drum_stem(video_id: str) -> FileResponse:
     """Serve the isolated drum-stem WAV for drums-only playback."""
