@@ -3,12 +3,14 @@
 A *project* pairs a YouTube source with its drum transcription and is persisted
 via `store.py`, keyed by video id. Endpoints:
 
-  POST   /transcribe        {url}  → open existing project or start a job
-  GET    /jobs/{id}/stream         → SSE progress, terminal event carries project
-  GET    /projects                 → list summaries
-  GET    /projects/{id}            → full project
-  PUT    /projects/{id}            → save edited notation
-  DELETE /projects/{id}            → remove
+  POST   /transcribe             {url}     → open existing project or start a job
+  GET    /jobs/{id}/stream                 → SSE progress, terminal event carries project/preview
+  GET    /projects                         → list summaries
+  GET    /projects/{id}                    → full project
+  GET    /projects/{id}/diagnose           → notation diagnostics summary
+  POST   /projects/{id}/retune  {params}   → re-run with new params, stream a preview (job)
+  PUT    /projects/{id}          {notation,params?} → save edited/accepted notation
+  DELETE /projects/{id}                    → remove
 
 Single-user local-dev server. Job state lives in process memory; projects live
 on disk. The pipeline is blocking PyTorch code, so each job runs on a dedicated
@@ -213,6 +215,60 @@ def _run_job(job: JobState, url: str, use_drumsep: bool) -> None:
         job.progress.put(_DONE)
 
 
+def _run_retune_job(job: JobState, video_id: str, params_dict: dict[str, Any]) -> None:
+    """Worker thread: re-run the pipeline for an existing project with new params
+    (cache-accelerated — a late-stage tweak reuses Demucs/DrumSep/ADTOF/Beat-This
+    from the stage cache) and stash the *preview* notation on the job WITHOUT
+    saving. The client accepts (PUT) or discards it."""
+    from sheetydrums.cli import serialize_to_schema
+    from sheetydrums.config import CLIConfig
+    from sheetydrums.factory import build_pipeline
+    from sheetydrums.fetch import download_audio
+    from sheetydrums.params import PipelineParams
+
+    def on_progress(msg: str) -> None:
+        job.progress.put(msg)
+
+    try:
+        project = store.load_project(video_id)
+        if project is None:  # deleted between request and worker start
+            job.error = f"No project for video_id {video_id!r}"
+            return
+        url = (project.get("source") or {}).get("url")
+        if not url:
+            job.error = "Project has no source URL to re-fetch audio from."
+            return
+
+        on_progress("preparing audio…")
+        downloaded = download_audio(url)  # idempotent — hits the local cache
+        params = PipelineParams.from_dict(params_dict)
+        # Web projects are always transcribed with DrumSep on (the /transcribe
+        # default), so re-tune the same way.
+        config: CLIConfig = CLIConfig(use_drumsep=True, verbose=False)
+        pipeline = build_pipeline(
+            config,
+            params=params,
+            cache_dir=store.stages_dir(video_id),
+            on_progress=on_progress,
+        )
+        # No stem paths — the drum-stem/drumless already exist; don't rewrite them.
+        result = pipeline.transcribe(downloaded.path)
+        notation: dict[str, Any] = serialize_to_schema(result)
+        job.result = {
+            "preview": True,
+            "video_id": video_id,
+            "notation": notation,
+            "params": params.to_dict(),
+        }
+        n_notes = sum(len(b["notes"]) for b in notation["bars"])
+        on_progress(f"done: preview {n_notes} notes / {len(notation['bars'])} bars")
+    except Exception as exc:
+        job.error = f"{type(exc).__name__}: {exc}"
+    finally:
+        job.done = True
+        job.progress.put(_DONE)
+
+
 @app.get("/jobs/{job_id}/stream")
 async def stream_job(job_id: str) -> StreamingResponse:
     """SSE stream of progress messages followed by a single terminal event.
@@ -318,11 +374,39 @@ async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[
     notation = body.get("notation")
     if notation is None:
         raise HTTPException(400, "Body must contain `notation`.")
+    to_save: dict[str, Any] = {**existing, "notation": notation}
+    # Accepting a re-tune preview also persists the params that produced it.
+    if body.get("params") is not None:
+        to_save["params"] = body["params"]
     try:
-        project = store.save_project({**existing, "notation": notation})
+        project = store.save_project(to_save)
     except Exception as exc:
         raise HTTPException(400, f"Invalid notation: {exc}") from exc
     return project
+
+
+class RetuneRequest(BaseModel):
+    params: dict[str, Any] = {}
+
+
+@app.post("/projects/{video_id}/retune")
+async def retune(video_id: str, req: RetuneRequest = Body(...)) -> dict[str, Any]:
+    """Re-run the pipeline for an existing project with new params and stream a
+    *preview* (via GET /jobs/{id}/stream, terminal `result` event). Fast for
+    late-stage tweaks thanks to the stage cache. Nothing is saved until the
+    client PUTs the accepted notation (+ params)."""
+    if store.load_project(video_id) is None:
+        raise HTTPException(404, f"No project for video_id {video_id!r}")
+    job_id: str = uuid.uuid4().hex
+    job: JobState = JobState()
+    _prune_jobs()
+    _jobs[job_id] = job
+    threading.Thread(
+        target=_run_retune_job,
+        args=(job, video_id, req.params),
+        daemon=True,
+    ).start()
+    return {"status": "job", "job_id": job_id}
 
 
 @app.delete("/projects/{video_id}")
