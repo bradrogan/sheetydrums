@@ -10,13 +10,16 @@
     "dev": "vite",
     "prebuild": "pnpm run schema:gen && pnpm run typecheck",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:tuning": "node scripts/verify-tuning.mjs"
   },
   "dependencies": {
     "vexflow": "^5.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "json-schema-to-typescript": "^15.0.4",
+    "playwright": "^1.62.1",
     "typescript": "^5.7.0",
     "vite": "^6.0.0"
   }
