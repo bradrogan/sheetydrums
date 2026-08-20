@@ -828,6 +828,34 @@ button#tune-toggle.active {
   flex-direction: column;
   gap: 0.7rem;
   font-size: 0.9rem;
+  /* Stay within the 360px left column — never overspill into the score. */
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+/* Everything inside is allowed to shrink so nothing forces the panel wider. */
+.tuning-panel * {
+  min-width: 0;
+}
+
+.tuning-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.tuning-title {
+  font-family: var(--font-hand);
+  font-size: 1.1rem;
+}
+button.tuning-close {
+  padding: 0.1rem 0.45rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: none;
 }
 
 .tuning-diag {
@@ -853,6 +881,7 @@ button#tune-toggle.active {
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
+  flex-wrap: wrap;
 }
 .knob-adtof {
   flex-direction: column;

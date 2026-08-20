@@ -78,6 +78,8 @@ export interface TuningContext {
   renderPreview: (n: Notation) => void;
   /** Reload the project fresh (re-route) so sync/edit rebind after accept/discard. */
   reload: () => void;
+  /** Hide the panel (× / close). */
+  onClose: () => void;
 }
 
 export function setupTuning(ctx: TuningContext): void {
@@ -92,6 +94,16 @@ export function setupTuning(ctx: TuningContext): void {
   panel.innerHTML = '';
   panel.classList.add('tuning-panel');
 
+  // Header: title + close (×). Dev/power-user tool — the primary UX is
+  // correct-by-example (edit → "fix the rest"), coming later.
+  const header = el('div', 'tuning-header');
+  const title = el('span', 'tuning-title');
+  title.textContent = 'Tune (dev)';
+  const closeBtn = button('✕', 'tuning-close', () => ctx.onClose());
+  closeBtn.title = 'Close';
+  header.append(title, closeBtn);
+  panel.appendChild(header);
+
   const diagBox = el('div', 'tuning-diag muted');
   panel.appendChild(diagBox);
   void refreshDiagnostics();
@@ -105,12 +117,22 @@ export function setupTuning(ctx: TuningContext): void {
   const actions = el('div', 'tuning-actions');
 
   const retuneBtn = button('Re-run preview', 'primary', () => void doRetune());
+  const resetBtn = button('Reset to defaults', 'ghost', () => doReset());
   const acceptBtn = button('Accept', 'accept', () => void doAccept());
   const discardBtn = button('Discard', 'ghost', () => doDiscard());
   acceptBtn.hidden = true;
   discardBtn.hidden = true;
-  actions.append(retuneBtn, acceptBtn, discardBtn);
+  actions.append(retuneBtn, resetBtn, acceptBtn, discardBtn);
   panel.append(status, diffBox, actions);
+
+  function doReset(): void {
+    for (const g of Object.keys(params)) delete params[g];
+    buildKnobs(knobsBox); // re-render inputs blank / "(default)"
+    diffBox.innerHTML = '';
+    acceptBtn.hidden = true;
+    discardBtn.hidden = true;
+    status.textContent = 'Params reset to defaults — re-run to preview.';
+  }
 
   async function refreshDiagnostics(): Promise<void> {
     try {
@@ -135,6 +157,13 @@ export function setupTuning(ctx: TuningContext): void {
     const current = (params[k.group]?.[k.field] as number | undefined);
     if (k.kind === 'select') {
       const sel = document.createElement('select');
+      // A "(default)" option (value "") means "unset" → the backend uses its
+      // built-in default, so the user can always get back to default.
+      const def = document.createElement('option');
+      def.value = '';
+      def.textContent = '(default)';
+      def.selected = current === undefined;
+      sel.appendChild(def);
       for (const opt of k.options!) {
         const o = document.createElement('option');
         o.value = String(opt);
@@ -142,7 +171,10 @@ export function setupTuning(ctx: TuningContext): void {
         if (current === opt) o.selected = true;
         sel.appendChild(o);
       }
-      sel.onchange = () => setParam(k.group, k.field, Number(sel.value));
+      sel.onchange = () => {
+        if (sel.value === '') clearParam(k.group, k.field);
+        else setParam(k.group, k.field, Number(sel.value));
+      };
       input = sel;
     } else {
       const inp = document.createElement('input');

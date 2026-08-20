@@ -382,6 +382,10 @@ function setupTuningPanel(project: Project, events: Notation): void {
   panel.innerHTML = '';
   toggle.classList.remove('active');
 
+  const close = (): void => {
+    panel.hidden = true;
+    toggle.classList.remove('active');
+  };
   toggle.onclick = () => {
     const show = panel.hidden;
     panel.hidden = !show;
@@ -393,6 +397,7 @@ function setupTuningPanel(project: Project, events: Notation): void {
         panel,
         renderPreview: (n) => { renderScore(byId('score'), n); },
         reload: () => { void showProject(project.video_id); },
+        onClose: close,
       });
       panel.dataset.ready = '1';
     }
