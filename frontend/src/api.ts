@@ -37,15 +37,82 @@ export async function getProject(videoId: string): Promise<Project> {
   return (await resp.json()) as Project;
 }
 
-export async function saveNotation(videoId: string, notation: Notation): Promise<Project> {
+// Pipeline tuning params — a nested overrides object (backend PipelineParams).
+// Kept loose (partial, arbitrary groups) so the frontend needn't restate the
+// full catalog; the backend ignores unknown keys and fills defaults.
+export type PipelineParams = Record<string, Record<string, unknown>>;
+
+export async function saveNotation(
+  videoId: string,
+  notation: Notation,
+  params?: PipelineParams,
+): Promise<Project> {
   const resp = await ok(
     await fetch(`/projects/${encodeURIComponent(videoId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notation }),
+      body: JSON.stringify(params ? { notation, params } : { notation }),
     }),
   );
   return (await resp.json()) as Project;
+}
+
+// Notation diagnostics (GET /projects/{id}/diagnose). Shape mirrors
+// diagnostics.diagnose(); kept loose since it's display-only.
+export interface Diagnostics {
+  tempo_bpm: number | null;
+  time_signature: string | null;
+  n_bars: number;
+  n_notes: number;
+  notes_per_bar: number;
+  per_class: Record<string, number>;
+  hats: { closed: number; open: number; open_fraction: number | null };
+  confidence: { present: boolean; min?: number; median?: number; mean?: number };
+  empty_bars: number;
+  flags: string[];
+}
+
+export async function diagnose(videoId: string): Promise<Diagnostics> {
+  const resp = await ok(await fetch(`/projects/${encodeURIComponent(videoId)}/diagnose`));
+  return (await resp.json()) as Diagnostics;
+}
+
+// A re-tune preview (terminal `result` event of a retune job). NOT yet saved —
+// the caller renders the diff and either accepts (saveNotation with params) or
+// discards.
+export interface RetunePreview {
+  preview: true;
+  video_id: string;
+  notation: Notation;
+  params: PipelineParams;
+}
+
+// POST /projects/{id}/retune → a job whose stream carries a RetunePreview.
+export async function startRetune(videoId: string, params: PipelineParams): Promise<string> {
+  const resp = await ok(
+    await fetch(`/projects/${encodeURIComponent(videoId)}/retune`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ params }),
+    }),
+  );
+  const { job_id } = (await resp.json()) as { job_id: string };
+  return job_id;
+}
+
+export interface RetuneCallbacks {
+  onProgress: (msg: string) => void;
+  onResult: (preview: RetunePreview) => void;
+  onFailure: (error: string) => void;
+}
+
+// Same SSE shape as streamJob, but the terminal `result` is a preview payload.
+export function streamRetune(jobId: string, cb: RetuneCallbacks): EventSource {
+  return streamJob(jobId, {
+    onProgress: cb.onProgress,
+    onResult: (payload) => cb.onResult(payload as unknown as RetunePreview),
+    onFailure: cb.onFailure,
+  });
 }
 
 export async function deleteProject(videoId: string): Promise<void> {

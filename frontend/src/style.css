@@ -808,3 +808,123 @@ button#edit-toggle.active {
     margin: 0.5in;
   }
 }
+
+/* === Tuning panel (Phase 1: manual params) === */
+
+button#tune-toggle.active {
+  background: var(--crayon-green);
+  color: #08160a;
+  border-color: var(--crayon-green);
+}
+
+.tuning-panel {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: var(--wobble);
+  box-shadow: var(--sticker);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  font-size: 0.9rem;
+}
+
+.tuning-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  line-height: 1.35;
+}
+.tuning-flag {
+  color: var(--crayon-red);
+}
+
+.tuning-knobs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  border-top: 1.5px dashed var(--ink-soft);
+  border-bottom: 1.5px dashed var(--ink-soft);
+  padding: 0.7rem 0;
+}
+.knob-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.knob-adtof {
+  flex-direction: column;
+  align-items: stretch;
+}
+.knob-label {
+  color: var(--ink-soft);
+}
+.knob-row input[type="number"] {
+  width: 5rem;
+  padding: 0.25rem 0.4rem;
+}
+.knob-row select {
+  font: inherit;
+  font-family: var(--font-body);
+  padding: 0.25rem 0.4rem;
+  border: 2px solid var(--ink);
+  border-radius: var(--wobble);
+  background: #10101a;
+  color: var(--ink);
+}
+.adtof-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+.adtof-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  text-align: center;
+}
+.adtof-cell input {
+  width: 100%;
+  padding: 0.2rem;
+  text-align: center;
+}
+
+.tuning-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.diff-head {
+  font-family: var(--font-hand);
+  font-size: 1.05rem;
+}
+.diff-row {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.tuning-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.tuning-actions button.accept {
+  background: var(--crayon-green);
+  color: #08160a;
+  border-color: var(--crayon-green);
+}
+.tuning-actions button.primary {
+  background: var(--crayon-blue);
+  color: #04121a;
+  border-color: var(--crayon-blue);
+}
+.adtof-grid.adtof-partial {
+  outline: 2px dashed var(--crayon-red);
+  outline-offset: 3px;
+}

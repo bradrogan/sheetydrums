@@ -3,9 +3,10 @@ import { createYouTubePlayer, type PlayerHandle } from './playback';
 import { createAudioPlayer } from './audioPlayer';
 import { SyncController } from './sync';
 import { setupEditing, editSession } from './edit';
+import { setupTuning } from './tuning';
 import { injectPoo } from './poo';
 import * as api from './api';
-import type { Project, ProjectSummary } from './api';
+import type { Notation, Project, ProjectSummary } from './api';
 
 // === DOM references ===
 
@@ -365,6 +366,37 @@ async function showProject(videoId: string): Promise<void> {
     scoreEl: byId('score'),
   });
   await setupPlayback(project, model, sync);
+  setupTuningPanel(project, events);
+}
+
+// Wire the "Tune" toggle + manual params panel (Phase 1). The panel lives in the
+// left column; toggling reveals it. Preview renders into the score read-only;
+// Accept/Discard re-route to reload the project so sync/edit rebind cleanly.
+function setupTuningPanel(project: Project, events: Notation): void {
+  const toggle = byId('tune-toggle') as HTMLButtonElement;
+  const panel = byId('tuning-panel');
+  // The panel + toggle are shared DOM across navigation — reset per project so a
+  // stale `ready` flag doesn't skip re-init for the newly-opened project.
+  panel.hidden = true;
+  delete panel.dataset.ready;
+  panel.innerHTML = '';
+  toggle.classList.remove('active');
+
+  toggle.onclick = () => {
+    const show = panel.hidden;
+    panel.hidden = !show;
+    toggle.classList.toggle('active', show);
+    if (show && !panel.dataset.ready) {
+      setupTuning({
+        project,
+        notation: events,
+        panel,
+        renderPreview: (n) => { renderScore(byId('score'), n); },
+        reload: () => { void showProject(project.video_id); },
+      });
+      panel.dataset.ready = '1';
+    }
+  };
 }
 
 interface LoopState {
