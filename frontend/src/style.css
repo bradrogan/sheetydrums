@@ -379,7 +379,13 @@ button.ghost:hover {
   top: 0;
   z-index: 20;
   background: var(--paper);
+  /* Extend the opaque background 1rem into the right body-margin (safely inside
+     it — no overflow) so it occludes the score card's 3px teal box-shadow, which
+     otherwise peeks past the header's right edge when scrolled. padding-right
+     keeps the buttons in place. */
   padding: 0.5rem 0;
+  margin-right: -1rem;
+  padding-right: 1rem;
 }
 .project-topbar #meta {
   flex: 1 1 auto;
