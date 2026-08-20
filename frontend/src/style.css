@@ -564,6 +564,112 @@ button#edit-toggle.active {
   margin-left: auto;
 }
 
+/* === Column (beat) editor popover — a vertical mini-staff === */
+.col-popover {
+  min-width: 11rem;
+  max-width: 13rem;
+  padding: 0.45rem 0.5rem;
+}
+.col-popover-head {
+  font-family: var(--font-hand);
+  font-size: 1.05rem;
+  color: var(--ink);
+  border-bottom: 1.5px dashed var(--ink-soft);
+  padding-bottom: 0.3rem;
+  margin-bottom: 0.3rem;
+}
+/* Faint horizontal rules behind the rows evoke a staff. */
+.col-staff {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.col-staff-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+}
+/* Present hit: highlight the whole row. */
+.col-staff-row.on {
+  border-color: rgba(45, 226, 255, 0.4);
+  background: rgba(45, 226, 255, 0.08);
+}
+/* The on/off toggle is the big click target (cell glyph + label). */
+.col-toggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-align: left;
+  padding: 0.2rem 0.4rem;
+  background: transparent;
+  color: var(--ink-soft);
+  border: none;
+  box-shadow: none;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.col-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  filter: none;
+}
+.col-toggle .col-cell {
+  flex: 0 0 1.3rem;
+  text-align: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--ink-soft);
+  opacity: 0.28;
+}
+.col-toggle .col-row-label {
+  flex: 1 1 auto;
+}
+.col-staff-row.on .col-toggle {
+  color: var(--ink);
+}
+.col-staff-row.on .col-cell {
+  color: var(--crayon-blue);
+  opacity: 1;
+}
+/* Hi-hat closed|open toggle. */
+.col-variant {
+  display: flex;
+  flex: 0 0 auto;
+  margin-right: 0.3rem;
+}
+.col-variant button {
+  width: 1.5rem;
+  padding: 0.1rem 0;
+  font-size: 0.8rem;
+  background: #24242f;
+  color: var(--ink-soft);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+}
+.col-variant button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.col-variant button:last-child {
+  border-radius: 0 6px 6px 0;
+  border-left: none;
+}
+.col-variant button.active {
+  background: var(--crayon-blue);
+  color: #04121a;
+}
+
+.edit-col-highlight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(45, 226, 255, 0.16);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* Unsaved-changes modal (leaving edit mode). */
 .edit-modal-overlay {
   position: fixed;
