@@ -57,6 +57,11 @@ addopts = "--strict-markers"
 markers = [
     "slow: integration tests that load real models / fixtures (run with --run-slow)",
 ]
+# Silence the same third-party rotary-embedding-torch FutureWarning in the test
+# summary (see sheetydrums/__init__.py). Tightly scoped to that message.
+filterwarnings = [
+    "ignore:.*torch.cuda.amp.autocast.*is deprecated:FutureWarning",
+]
 
 [tool.uv.sources]
 adtof-pytorch = { git = "https://github.com/xavriley/ADTOF-pytorch.git" }
