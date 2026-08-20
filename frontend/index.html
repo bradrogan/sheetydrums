@@ -53,6 +53,7 @@
           <div id="meta"></div>
           <button type="button" id="edit-toggle" class="ghost">Edit</button>
           <button type="button" id="save-btn" hidden>Saved</button>
+          <button type="button" id="tune-toggle" class="ghost">Tune</button>
           <button type="button" id="pdf-btn">Download PDF</button>
         </div>
         <div class="project-layout">
@@ -94,6 +95,9 @@
               <summary>Raw notation JSON</summary>
               <pre id="raw"></pre>
             </details>
+            <!-- Tuning (dev) drawer — sticky to the bottom of the SCORE column
+                 only (the left player pane stays clear); the sheet scrolls above. -->
+            <div id="tuning-panel" class="no-print" hidden></div>
           </div>
         </div>
       </section>
