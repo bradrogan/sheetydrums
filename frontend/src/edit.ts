@@ -96,10 +96,13 @@ export interface EditContext {
   /** Persisted verified selections (the user layer), drawn as bands. Mutated in
    * place as selections are committed, so the score never needs a full reload. */
   selections: api.Selection[];
+  /** The raw base notation (pre-composition). Removing a selection reverts its
+   * lane × bar region to this. */
+  base: Notation;
 }
 
 export function setupEditing(ctx: EditContext): void {
-  const { project, notation, model, sync, editToggle, saveBtn, scoreEl } = ctx;
+  const { project, notation, model, sync, editToggle, saveBtn, scoreEl, base } = ctx;
   const videoId = project.video_id;
   const numerator = notation.time_signature.numerator;
   const maxSixteenth = Math.round((numerator / notation.time_signature.denominator) * SUBDIV);
@@ -159,6 +162,64 @@ export function setupEditing(ctx: EditContext): void {
     toolbar.appendChild(mkBtn('Cancel', '', () => { sel.clear(); hideToolbar(); redrawBands(); }));
   };
 
+  // --- Change-log panel: list + undo persisted verified selections ------
+  let changelog: HTMLElement | null = null;
+
+  // Removing a selection reverts its lane × bar region to the base generation.
+  const revertRegionToBase = (lane: LaneKey, start: number, end: number): void => {
+    for (const bar of notation.bars) {
+      if (bar.index < start || bar.index > end) continue;
+      const baseBar = base.bars.find((b) => b.index === bar.index);
+      bar.notes = bar.notes.filter((n) => laneOf(n.instrument) !== lane);
+      for (const n of baseBar?.notes ?? []) {
+        if (laneOf(n.instrument) === lane) bar.notes.push(structuredClone(n));
+      }
+      const bv = model.bars.find((b) => b.index === bar.index);
+      if (bv) drawBar(bv, bar, true);
+    }
+  };
+
+  const removeSelection = async (target: api.Selection): Promise<void> => {
+    try {
+      await api.deleteSelection(videoId, target.selection_id);
+    } catch (err) {
+      alert(`Couldn't remove selection: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const i = persisted.findIndex((s) => s.selection_id === target.selection_id);
+    if (i >= 0) persisted.splice(i, 1);
+    revertRegionToBase(target.lane as LaneKey, target.bar_start, target.bar_end);
+    saved = structuredClone(notation); // the reverted state is the new baseline
+    redrawBands();
+    renderChangelog();
+  };
+
+  // A docked panel (edit mode only) listing every verified selection with a
+  // Remove (undo) button. Hidden in view mode and when there are none.
+  const renderChangelog = (): void => {
+    if (!sync.editMode || persisted.length === 0) {
+      changelog?.remove();
+      changelog = null;
+      return;
+    }
+    if (!changelog) {
+      changelog = document.createElement('div');
+      changelog.className = 'changelog-panel';
+      document.body.appendChild(changelog);
+    }
+    changelog.innerHTML = '';
+    changelog.appendChild(el('div', 'changelog-head', `Verified (${persisted.length})`));
+    const list = el('div', 'changelog-list');
+    for (const s of [...persisted].sort((a, b) => a.bar_start - b.bar_start || a.lane.localeCompare(b.lane))) {
+      const row = el('div', 'changelog-row');
+      const bars = s.bar_start === s.bar_end ? `bar ${s.bar_start}` : `bars ${s.bar_start}–${s.bar_end}`;
+      row.appendChild(el('span', 'changelog-label', `${laneLabel(s.lane as LaneKey)} · ${bars}`));
+      row.appendChild(mkBtn('Remove', 'danger', () => void removeSelection(s)));
+      list.appendChild(row);
+    }
+    changelog.appendChild(list);
+  };
+
   const commit = async (): Promise<boolean> => {
     const input = sel.toInput(notation);
     let created: api.Selection;
@@ -180,6 +241,7 @@ export function setupEditing(ctx: EditContext): void {
     // after this commit, not the committed ones (which are already persisted).
     saved = structuredClone(notation);
     redrawBands();
+    renderChangelog();
     return true;
   };
 
@@ -205,6 +267,7 @@ export function setupEditing(ctx: EditContext): void {
     editToggle.classList.add('active');
     scoreEl.classList.add('editing');
     rerenderAll(true); // fixed 16th grid so notes stay put
+    renderChangelog();
     sync.refresh(); // reposition the retained playhead after the relayout
   };
 
@@ -216,6 +279,7 @@ export function setupEditing(ctx: EditContext): void {
     editSession.dirty = false;
     sel.clear();
     hideToolbar();
+    renderChangelog(); // editMode is now false → removes the panel
     closePopover();
     rerenderAll(false); // back to proportional view
     sync.refresh();
@@ -299,7 +363,7 @@ function laneLabel(lane: LaneKey): string {
   return LANE_LABELS[lane];
 }
 
-function el(tag: string, className: string, text: string): HTMLElement {
+function el(tag: string, className: string, text = ''): HTMLElement {
   const e = document.createElement(tag);
   e.className = className;
   e.textContent = text;
