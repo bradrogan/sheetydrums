@@ -30,7 +30,7 @@ def _project(vid: str = "abc12345678", title: str = "Title") -> dict[str, Any]:
 
 @pytest.fixture()
 def tmp_store(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
-    monkeypatch.setattr(store, "_STORE_DIR", tmp_path)
+    monkeypatch.setattr(store, "_store_dir", tmp_path)
     return tmp_path
 
 
@@ -156,7 +156,7 @@ def test_invalid_log_name_rejected(tmp_store: Any, bad_name: str) -> None:
 # === Projects-directory configuration ===================================
 
 def test_set_projects_dir_persists_and_switches(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(store, "_STORE_DIR", tmp_path / "old")
+    monkeypatch.setattr(store, "_store_dir", tmp_path / "old")
     monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
     new = tmp_path / "new_projects"
     returned = store.set_projects_dir(new)
@@ -168,7 +168,7 @@ def test_set_projects_dir_persists_and_switches(tmp_path: Any, monkeypatch: pyte
 
 def test_set_projects_dir_moves_existing(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     old = tmp_path / "old"
-    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_store_dir", old)
     monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
     store.save_project(_project("vid00000001"))
     store.append_event("vid00000001", "edits", {"op": "add"})
@@ -188,7 +188,7 @@ def test_set_projects_dir_moves_existing(tmp_path: Any, monkeypatch: pytest.Monk
 
 def test_set_projects_dir_refuses_absolute_and_collision(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     old = tmp_path / "old"
-    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_store_dir", old)
     monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
     with pytest.raises(ValueError):
         store.set_projects_dir("relative/path")
@@ -206,7 +206,7 @@ def test_set_projects_dir_refuses_absolute_and_collision(tmp_path: Any, monkeypa
 def test_set_projects_dir_leaves_unrelated_files_alone(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """A user-chosen projects dir may hold anything; a move touches only ours."""
     old = tmp_path / "old"
-    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_store_dir", old)
     monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
     store.save_project(_project("vid00000001"))
     (old / "taxes.pdf").write_bytes(b"mine")
@@ -223,7 +223,7 @@ def test_set_projects_dir_refuses_nested_target(tmp_path: Any, monkeypatch: pyte
     """Nesting makes the move ill-defined, so it must be refused up front rather
     than fail halfway through and strand projects."""
     old = tmp_path / "old"
-    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_store_dir", old)
     monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
     store.save_project(_project("vid00000001"))
 
@@ -238,7 +238,7 @@ def test_set_projects_dir_refuses_nested_target(tmp_path: Any, monkeypatch: pyte
 
 def test_set_projects_dir_rolls_back_a_partial_move(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     old = tmp_path / "old"
-    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_store_dir", old)
     monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
     store.save_project(_project("vid00000001"))
     store.append_event("vid00000001", "edits", {"op": "add"})
@@ -288,7 +288,7 @@ def isolated_store(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
     """
     src = tmp_path / "store"
     src.mkdir()
-    monkeypatch.setattr(store, "_STORE_DIR", src)
+    monkeypatch.setattr(store, "_store_dir", src)
     monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
     return src, tmp_path / "moved"  # siblings: not nested, so the move is allowed
 

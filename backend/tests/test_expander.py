@@ -97,7 +97,6 @@ def test_tom_close_clusters_merge_to_two():
 def test_non_tom_hits_unchanged_by_clustering():
     # Kick and snare hits pass through untouched even when tom clustering runs.
     expander = CheukExpander()
-    blank = _silent_buffer()
     substems = _substems(_toms_buffer_with_pitches([100.0, 250.0]))
     hits = (
         DrumHit(time=0.1, drum_class="kick", confidence=0.9),

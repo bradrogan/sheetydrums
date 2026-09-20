@@ -15,7 +15,7 @@ from sheetydrums import server, store
 
 @pytest.fixture()
 def tmp_cfg(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
-    monkeypatch.setattr(store, "_STORE_DIR", tmp_path / "projects")
+    monkeypatch.setattr(store, "_store_dir", tmp_path / "projects")
     monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
     server._jobs.clear()
     return tmp_path
