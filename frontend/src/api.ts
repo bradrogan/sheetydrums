@@ -42,16 +42,39 @@ export async function getProject(videoId: string): Promise<Project> {
 // full catalog; the backend ignores unknown keys and fills defaults.
 export type PipelineParams = Record<string, Record<string, unknown>>;
 
-export async function saveNotation(
+// PUT /projects/{id} writes the project's BASE layer. `project.notation` from a
+// GET is the *composed effective* layer (base + system pass + verified
+// selections), so these two entry points are deliberately separate rather than
+// one function with a flag — sending the composed notation back would flatten
+// the layers into the base, and the backend 409s on exactly that.
+//
+// Use for genuinely new generator output only: a retune preview the user
+// accepted. `layer: 'base'` is the backend's required acknowledgement of that.
+export async function acceptRetune(
   videoId: string,
   notation: Notation,
-  params?: PipelineParams,
+  params: PipelineParams,
 ): Promise<Project> {
   const resp = await ok(
     await fetch(`/projects/${encodeURIComponent(videoId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params ? { notation, params } : { notation }),
+      body: JSON.stringify({ notation, params, layer: 'base' }),
+    }),
+  );
+  return (await resp.json()) as Project;
+}
+
+// Use for hand edits to the score. Sends no `layer` acknowledgement, so once a
+// project has verified selections or a system pass the backend rejects it and
+// the edit has to go through the /selections endpoints instead (Phase 2d) —
+// which is the point: it fails loudly rather than silently flattening.
+export async function saveNotation(videoId: string, notation: Notation): Promise<Project> {
+  const resp = await ok(
+    await fetch(`/projects/${encodeURIComponent(videoId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notation }),
     }),
   );
   return (await resp.json()) as Project;
@@ -78,8 +101,7 @@ export async function diagnose(videoId: string): Promise<Diagnostics> {
 }
 
 // A re-tune preview (terminal `result` event of a retune job). NOT yet saved —
-// the caller renders the diff and either accepts (saveNotation with params) or
-// discards.
+// the caller renders the diff and either accepts (acceptRetune) or discards.
 export interface RetunePreview {
   preview: true;
   video_id: string;

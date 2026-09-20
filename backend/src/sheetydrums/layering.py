@@ -112,9 +112,11 @@ def compose(
     system_layer: dict[str, Any] | None,
     selections: list[dict[str, Any]] | None,
 ) -> tuple[dict[str, Any], dict[int, list[str]]]:
-    """Return (effective_notation, origin_map). origin_map maps each bar index to
+    """Return (effective_notation, origin_map). origin_map maps each bar index
+    (an `int` here; the HTTP layer stringifies it — see `server.get_layers`) to
     the origin ('base'|'system'|'user') of each note in the effective bar's
-    notes, in emitted order. Validates the composed notation before returning."""
+    notes, in emitted order. Validates the composed notation before returning
+    whenever a layer actually applied."""
     result = copy.deepcopy(base)
     regions = verified_regions(selections)
     # `compose` is the single authority for the final notation, so it re-checks
@@ -128,11 +130,13 @@ def compose(
     }
 
     # System layer: apply each op unless it lands in a verified region.
-    if system_layer:
-        for op in system_layer.get("ops", []):
-            if _op_in_verified(op, regions):
-                continue
-            _apply_system_op(tagged, op)
+    system_ops: list[dict[str, Any]] = [
+        op
+        for op in (system_layer or {}).get("ops", [])
+        if not _op_in_verified(op, regions)
+    ]
+    for op in system_ops:
+        _apply_system_op(tagged, op)
 
     # User layer: overwrite each verified region with its frozen notes (user wins).
     for sel in regions:
@@ -157,5 +161,13 @@ def compose(
         bar["notes"] = [p[0] for p in pairs]
         origin_map[bar["index"]] = [p[1] for p in pairs]
 
-    validate(result)
+    # Validate only what the layers actually built. With nothing to layer the
+    # effective notation is the base re-sorted, and `store.save_project` already
+    # validated that base on write — neither the copy nor the sort can invalidate
+    # it. The check is worth skipping because it dominates: on a 150-bar song a
+    # compose measures ~36 ms, ~31 ms of which is this jsonschema pass, and
+    # `compose` now runs on the read path (every GET of a project, its layers, or
+    # its diagnostics) on the event loop.
+    if regions or system_ops:
+        validate(result)
     return result, origin_map

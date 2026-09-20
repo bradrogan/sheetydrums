@@ -265,7 +265,7 @@ export function setupTuning(ctx: TuningContext): void {
     acceptBtn.disabled = true;
     status.textContent = 'Saving…';
     try {
-      await api.saveNotation(videoId, preview.notation, preview.params);
+      await api.acceptRetune(videoId, preview.notation, preview.params);
       preview = null;
       ctx.reload();
     } catch (err) {

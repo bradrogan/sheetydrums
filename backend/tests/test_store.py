@@ -659,3 +659,35 @@ def test_phase2_project_survives_a_projects_dir_move(
     )
     assert "user" in origins[1]
     assert any(n["instrument"] == "hihat_open" for n in effective["bars"][0]["notes"])
+
+
+def test_summary_counts_describe_the_effective_notation(tmp_store: Any) -> None:
+    """A gallery card must agree with the score GET /projects/{id} serves: that
+    endpoint returns the composed effective layer, so a selection that deletes
+    notes has to show up in the summary's counts too."""
+    project = _project()
+    project["selections"] = [{
+        "selection_id": "sel_1", "origin": "user", "lane": "snare",
+        "bar_start": 1, "bar_end": 1, "notes": [], "ops": [], "verified": True,
+    }]
+    store.save_project(project)
+    [summary] = store.list_projects()
+    assert summary["n_notes"] == 1  # the snare is gone; only the kick survives
+    assert summary["n_bars"] == 1
+
+
+def test_summary_falls_back_to_base_when_a_layer_cannot_compose(tmp_store: Any) -> None:
+    """One unreadable record must not take out the whole gallery listing."""
+    import json
+
+    project = _project()
+    project["selections"] = [{
+        "selection_id": "sel_bad", "origin": "user", "lane": "hihat",
+        "bar_start": 1, "bar_end": 1, "verified": True, "ops": [],
+        "notes": [{"bar": 1, "note": {"instrument": "hihat_open", "position": "1/2",
+                                      "duration": "1/8", "sustain_until": "1/4"}}],
+    }]
+    # Straight to disk: save_project would (correctly) reject this.
+    store._atomic_write_text(store._path_for("abc12345678"), json.dumps(project))
+    [summary] = store.list_projects()
+    assert summary["n_notes"] == 2  # base counts, not a crash

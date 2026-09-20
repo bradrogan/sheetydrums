@@ -7,6 +7,13 @@
 // unambiguous — the old pitch-from-y hit-test couldn't express either. Edits
 // mutate the in-memory notation and re-render the affected bar; Save persists
 // via PUT /projects/{id}. See docs/design/edit-ux.md.
+//
+// The notation handed in is the project's *composed effective* layer, while PUT
+// /projects/{id} writes the BASE layer — so Save is only correct while a project
+// has no verified selections and no system pass, which is every project until
+// the Phase 2d editor lands. On a layered project the backend 409s rather than
+// flattening the layers, and the message surfaces through doSave's alert. Phase
+// 2d's job is to route these edits to /projects/{id}/selections instead.
 import {
   drawBar,
   parsePosition,

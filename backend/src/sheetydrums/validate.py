@@ -95,9 +95,32 @@ def check_selection_invariants(selections: list[dict[str, Any]]) -> None:
     _check_no_lane_overlap(selections)
 
 
+def _sustain_error(note: dict[str, Any]) -> str | None:
+    """The one Note-level rule JSON Schema can't state: `sustain_until` must lie
+    *after* `position`. Returns a message fragment, or None if the note is fine.
+    Shared by the notation check and the frozen-note check below, so a user's
+    verified note is held to exactly the same rule as a generated one — a frozen
+    note that breaks it is illegal in the composed notation, and rejecting it
+    only at compose time would mean accepting a selection that then breaks every
+    read of the project."""
+    until = note.get("sustain_until")
+    if until is None:
+        return None
+    pos: Fraction = Fraction(note["position"])
+    if Fraction(until) > pos:
+        return None
+    return (
+        f"sustain_until={until} must be greater than position ({note['position']})"
+    )
+
+
 def _check_selection_fields(selection: dict[str, Any]) -> None:
-    """One selection's own invariants: bar_end >= bar_start, every frozen note's
-    bar inside [bar_start, bar_end], every frozen note's instrument in `lane`."""
+    """One selection's own invariants: bar_end >= bar_start; every frozen note's
+    bar inside [bar_start, bar_end] and its instrument in `lane`; no two frozen
+    notes at one (bar, position) in the lane (a lane can't sound twice at one
+    instant — otherwise the renderer draws stacked noteheads and the closed-world
+    labels contradict); every frozen note's sustain_until after its position;
+    every op's bar inside the region (ops are edits *within* the selection)."""
     sid = selection.get("selection_id")
     start: int = selection["bar_start"]
     end: int = selection["bar_end"]
@@ -106,9 +129,11 @@ def _check_selection_fields(selection: dict[str, Any]) -> None:
             f"Selection {sid!r}: bar_end ({end}) is before bar_start ({start})."
         )
     lane: str = selection["lane"]
+    seen: set[tuple[int, Fraction]] = set()
     for item in selection["notes"]:
         bar: int = item["bar"]
-        instrument: str = item["note"]["instrument"]
+        note = item["note"]
+        instrument: str = note["instrument"]
         if not start <= bar <= end:
             raise ValueError(
                 f"Selection {sid!r}: frozen note in bar {bar} is outside the "
@@ -118,6 +143,24 @@ def _check_selection_fields(selection: dict[str, Any]) -> None:
             raise ValueError(
                 f"Selection {sid!r}: frozen note instrument {instrument!r} "
                 f"belongs to lane {lane_of(instrument)!r}, not {lane!r}."
+            )
+        key = (bar, Fraction(note["position"]))
+        if key in seen:
+            raise ValueError(
+                f"Selection {sid!r}: two frozen notes at bar {bar} position "
+                f"{note['position']} in lane {lane!r} — a lane sounds once per instant."
+            )
+        seen.add(key)
+        sustain = _sustain_error(note)
+        if sustain is not None:
+            raise ValueError(
+                f"Selection {sid!r}: frozen note bar {bar} {instrument}: {sustain}."
+            )
+    for op in selection["ops"]:
+        if not start <= op["bar"] <= end:
+            raise ValueError(
+                f"Selection {sid!r}: op in bar {op['bar']} is outside the "
+                f"selection's region [{start}, {end}]."
             )
 
 
@@ -154,12 +197,6 @@ def _check_sustain_until(events: dict[str, Any]) -> None:
     assert "bars" in events, "_check_sustain_until called before jsonschema.validate()"
     for bar in events["bars"]:
         for note in bar["notes"]:
-            if "sustain_until" not in note:
-                continue
-            pos: Fraction = Fraction(note["position"])
-            until: Fraction = Fraction(note["sustain_until"])
-            if until <= pos:
-                raise ValueError(
-                    f"Bar {bar['index']} {note['instrument']}: sustain_until={note['sustain_until']} "
-                    f"must be greater than position ({note['position']})."
-                )
+            error = _sustain_error(note)
+            if error is not None:
+                raise ValueError(f"Bar {bar['index']} {note['instrument']}: {error}.")
