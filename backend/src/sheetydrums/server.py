@@ -812,7 +812,24 @@ async def clear_system_layer(video_id: str) -> dict[str, Any]:
 
 
 def main_serve() -> None:
-    """Entry point for `sheetydrums-serve` — runs uvicorn on 127.0.0.1:8000."""
+    """Entry point for `sheetydrums-serve` — runs uvicorn on 127.0.0.1:8000.
+
+    Auto-reloads on source changes by default (this is a single-user local-dev
+    server, and the paired Vite frontend hot-reloads too), so editing backend
+    code no longer needs a manual restart. Set SHEETYDRUMS_RELOAD=0 to run
+    without the file watcher.
+    """
+    import os
+    from pathlib import Path
+
     import uvicorn
 
-    uvicorn.run("sheetydrums.server:app", host="127.0.0.1", port=8000, reload=False)
+    reload = os.environ.get("SHEETYDRUMS_RELOAD", "1") != "0"
+    uvicorn.run(
+        "sheetydrums.server:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=reload,
+        # Watch only our package, not the whole cwd (venv, caches, model files).
+        reload_dirs=[str(Path(__file__).resolve().parent)] if reload else None,
+    )
