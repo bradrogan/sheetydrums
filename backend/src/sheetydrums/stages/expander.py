@@ -38,6 +38,8 @@ Conforms to `interfaces.ClassExpander`.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -135,7 +137,7 @@ class CheukExpander:
         self._tom_min_cluster_gap_hz: float = tom_min_cluster_gap_hz
         # Populated by the most recent expand() call; the pipeline dumps it when
         # --debug-dir is set so hi-hat ratio distributions can be inspected/tuned.
-        self.last_hihat_debug: dict | None = None
+        self.last_hihat_debug: dict[str, Any] | None = None
 
     def expand(
         self,
@@ -216,7 +218,9 @@ class CheukExpander:
         ]
 
         hihat_ratios: list[float] = []
-        per_hit: list[dict] = []
+        # float measurements now; a "label" string is added once the
+        # open/closed decision is made below.
+        per_hit: list[dict[str, float | str]] = []
         for k, i in enumerate(hihat_indices):
             t = hits[i].time
             gap = max(0.0, gaps[k])

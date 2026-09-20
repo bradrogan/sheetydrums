@@ -51,6 +51,20 @@ reportUnknownMemberType = false
 reportUnknownArgumentType = false
 reportUnknownVariableType = false
 
+# `reportPrivateUsage` flags reads of `_name` from outside the declaring
+# module/class. That rule protects an API boundary from its *consumers*, and the
+# test suite sits inside the boundary: these tests monkeypatch module globals
+# (`store._store_dir`, `server._jobs`) and assert on concrete stage internals
+# (`_thresholds`, `_model_name`) precisely because that is what they are testing.
+# Turned off for `tests` only — `src` keeps it, and every other strict rule still
+# applies to both trees.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportPrivateUsage = "none"
+
+[[tool.pyright.executionEnvironments]]
+root = "src"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers"

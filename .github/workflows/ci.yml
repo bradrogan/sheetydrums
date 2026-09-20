@@ -48,6 +48,13 @@ jobs:
         run: uv run --frozen pytest -q
         working-directory: backend
 
+      - name: Typecheck
+        # Strict pyright over src and tests. Config (including the tests-only
+        # reportPrivateUsage exemption) lives in backend/pyproject.toml, so this
+        # is the same check as running `uv run pyright` locally.
+        run: uv run --frozen pyright
+        working-directory: backend
+
   frontend:
     name: frontend (types)
     runs-on: ubuntu-latest

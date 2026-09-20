@@ -42,7 +42,9 @@ def _load_store_dir() -> Path:
     return _DEFAULT_STORE_DIR
 
 
-_STORE_DIR: Path = _load_store_dir()
+# Mutable module state, not a constant: `set_projects_dir` reassigns it, which
+# is why it is lower-case. `_DEFAULT_STORE_DIR` above really is constant.
+_store_dir: Path = _load_store_dir()
 
 
 def _now_iso() -> str:
@@ -57,7 +59,7 @@ def default_projects_dir() -> Path:
 
 
 def get_projects_dir() -> Path:
-    return _STORE_DIR
+    return _store_dir
 
 
 def set_projects_dir(new_dir: Path | str, move_existing: bool = False) -> Path:
@@ -71,14 +73,14 @@ def set_projects_dir(new_dir: Path | str, move_existing: bool = False) -> Path:
     user's data). A move that fails partway is rolled back, so projects are
     never left split across two directories.
     """
-    global _STORE_DIR
+    global _store_dir
     target = Path(new_dir).expanduser()
     if not target.is_absolute():
         raise ValueError("Projects directory must be an absolute path.")
     if target.exists() and not target.is_dir():
         raise ValueError(f"{target} exists and is not a directory.")
 
-    old = _STORE_DIR
+    old = _store_dir
     if target == old:
         _persist_store_dir(target)  # still record it (first-time explicit set)
         return target
@@ -97,7 +99,7 @@ def set_projects_dir(new_dir: Path | str, move_existing: bool = False) -> Path:
         _move_projects(old, target)
     # Switch in memory before persisting: once the files have moved, the running
     # process must follow them even if writing the config file fails.
-    _STORE_DIR = target
+    _store_dir = target
     try:
         _persist_store_dir(target)
     except OSError as exc:
@@ -224,7 +226,7 @@ def _atomic_write_text(path: Path, text: str) -> None:
 
 def _path_for(video_id: str) -> Path:
     _check_video_id(video_id)
-    return _STORE_DIR / f"{video_id}.json"
+    return _store_dir / f"{video_id}.json"
 
 
 def project_exists(video_id: str) -> bool:
@@ -234,7 +236,7 @@ def project_exists(video_id: str) -> bool:
 def stem_path(video_id: str) -> Path:
     """Path to a project's isolated drum-stem WAV (may not exist yet)."""
     _check_video_id(video_id)
-    return _STORE_DIR / f"{video_id}.drums.wav"
+    return _store_dir / f"{video_id}.drums.wav"
 
 
 def has_stem(video_id: str) -> bool:
@@ -244,7 +246,7 @@ def has_stem(video_id: str) -> bool:
 def drumless_path(video_id: str) -> Path:
     """Path to a project's drumless backing-track WAV (may not exist yet)."""
     _check_video_id(video_id)
-    return _STORE_DIR / f"{video_id}.drumless.wav"
+    return _store_dir / f"{video_id}.drumless.wav"
 
 
 def has_drumless(video_id: str) -> bool:
@@ -255,7 +257,7 @@ def stages_dir(video_id: str) -> Path:
     """Directory holding a project's cached per-stage artifacts (may not exist
     yet). See `cache.StageCache`."""
     _check_video_id(video_id)
-    return _STORE_DIR / f"{video_id}.stages"
+    return _store_dir / f"{video_id}.stages"
 
 
 def _read_project(path: Path) -> dict[str, Any] | None:
@@ -343,7 +345,7 @@ def delete_project(video_id: str) -> bool:
     import shutil
 
     path = _path_for(video_id)
-    for log in _STORE_DIR.glob(f"{video_id}.*.jsonl"):
+    for log in _store_dir.glob(f"{video_id}.*.jsonl"):
         log.unlink(missing_ok=True)
     sdir = stages_dir(video_id)
     if sdir.exists():
@@ -366,7 +368,7 @@ def event_log_path(video_id: str, name: str) -> Path:
     _check_video_id(video_id)
     if not name.isidentifier():
         raise ValueError(f"Invalid log name: {name!r}")
-    return _STORE_DIR / f"{video_id}.{name}.jsonl"
+    return _store_dir / f"{video_id}.{name}.jsonl"
 
 
 def append_event(video_id: str, name: str, record: dict[str, Any]) -> dict[str, Any]:
@@ -407,11 +409,11 @@ def list_projects() -> list[dict[str, Any]]:
     """Return lightweight summaries, newest-updated first. Files in the projects
     dir that aren't projects are skipped — the dir is user-chosen, so a stray
     `.json` must not break the listing."""
-    if not _STORE_DIR.exists():
+    if not _store_dir.exists():
         return []
     summaries: list[dict[str, Any]] = [
         _summarize(project)
-        for path in _STORE_DIR.glob("*.json")
+        for path in _store_dir.glob("*.json")
         if (project := _read_project(path)) is not None
     ]
     summaries.sort(key=lambda s: s.get("updated_at") or "", reverse=True)

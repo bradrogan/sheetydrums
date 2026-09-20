@@ -2,6 +2,8 @@
 loads), so building the pipeline here is cheap."""
 from __future__ import annotations
 
+from typing import cast
+
 from sheetydrums.config import CLIConfig
 from sheetydrums.factory import build_pipeline
 from sheetydrums.params import (
@@ -12,9 +14,16 @@ from sheetydrums.params import (
     TranscriptionParams,
     overrides,
 )
-from sheetydrums.stages.transcription import _TUNED_THRESHOLDS
-from sheetydrums.stages.quantize import _SUBDIVISIONS_PER_WHOLE
-from sheetydrums.stages.separation import _MODEL_NAME
+from sheetydrums.stages.expander import CheukExpander
+from sheetydrums.stages.quantize import _SUBDIVISIONS_PER_WHOLE, StubQuantizer
+from sheetydrums.stages.separation import _MODEL_NAME, DemucsSeparator
+from sheetydrums.stages.transcription import _TUNED_THRESHOLDS, ADTOFTranscriber
+
+
+# The Pipeline holds each stage behind its Protocol, so the concrete
+# implementation attributes these tests assert on aren't visible to the type
+# checker. Narrow at the access site — the point of these tests is precisely
+# that the factory built the *concrete* stages with the right params.
 
 
 def test_defaults_are_all_none_overrides_empty() -> None:
@@ -54,19 +63,19 @@ def test_factory_threads_overrides_into_stages() -> None:
         separation=SeparationParams(model="htdemucs", shifts=3),
     )
     p = build_pipeline(CLIConfig(use_drumsep=True), params=params)
-    assert p._transcriber._thresholds == (0.1, 0.1, 0.1, 0.1, 0.1)
+    assert cast(ADTOFTranscriber, p._transcriber)._thresholds == (0.1, 0.1, 0.1, 0.1, 0.1)
     assert p._substem_branch is not None
-    assert p._substem_branch.expander._hihat_unimodal_open_threshold == 0.55
-    assert p._quantizer._subdivisions_per_whole == 32
-    assert p._separator._model_name == "htdemucs"
-    assert p._separator._shifts == 3
+    assert cast(CheukExpander, p._substem_branch.expander)._hihat_unimodal_open_threshold == 0.55
+    assert cast(StubQuantizer, p._quantizer)._subdivisions_per_whole == 32
+    assert cast(DemucsSeparator, p._separator)._model_name == "htdemucs"
+    assert cast(DemucsSeparator, p._separator)._shifts == 3
 
 
 def test_factory_defaults_match_stage_builtins() -> None:
     # No params → every stage falls back to its own built-in defaults (the
     # drift guard: default PipelineParams must reproduce today's behaviour).
     p = build_pipeline(CLIConfig(use_drumsep=True))
-    assert p._transcriber._thresholds == _TUNED_THRESHOLDS
-    assert p._quantizer._subdivisions_per_whole == _SUBDIVISIONS_PER_WHOLE
-    assert p._separator._model_name == _MODEL_NAME
-    assert p._separator._shifts is None
+    assert cast(ADTOFTranscriber, p._transcriber)._thresholds == _TUNED_THRESHOLDS
+    assert cast(StubQuantizer, p._quantizer)._subdivisions_per_whole == _SUBDIVISIONS_PER_WHOLE
+    assert cast(DemucsSeparator, p._separator)._model_name == _MODEL_NAME
+    assert cast(DemucsSeparator, p._separator)._shifts is None

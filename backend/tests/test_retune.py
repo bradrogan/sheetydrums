@@ -23,7 +23,7 @@ _NOTATION: dict[str, Any] = {
 
 @pytest.fixture()
 def tmp_store(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
-    monkeypatch.setattr(store, "_STORE_DIR", tmp_path)
+    monkeypatch.setattr(store, "_store_dir", tmp_path)
     server._jobs.clear()
     return tmp_path
 
