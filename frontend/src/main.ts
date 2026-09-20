@@ -329,7 +329,7 @@ function teardownPlayer(): void {
   activeTransport = null;
 }
 
-async function showProject(videoId: string, opts?: { edit?: boolean; focusBar?: number }): Promise<void> {
+async function showProject(videoId: string): Promise<void> {
   showOnly(projectSection);
   teardownPlayer();
   byId('meta').textContent = 'Loading…';
@@ -366,22 +366,12 @@ async function showProject(videoId: string, opts?: { edit?: boolean; focusBar?: 
     editToggle: byId('edit-toggle') as HTMLButtonElement,
     saveBtn: byId('save-btn') as HTMLButtonElement,
     scoreEl: byId('score'),
-    // Persisted verified selections (the user layer) to draw as bands.
+    // Persisted verified selections (the user layer) to draw as bands. edit.ts
+    // mutates this array in place as selections are committed — no full reload.
     selections: (project.selections ?? []) as unknown as api.Selection[],
-    // Committing a selection re-fetches the composed project + rebuilds the score.
-    reload: (o) => void showProject(videoId, o),
   });
   await setupPlayback(project, model, sync);
   setupTuningPanel(project, events);
-  // Re-enter edit mode after a rebuild requested it (e.g. just after Verify), so
-  // the persisted selection's band is immediately visible.
-  if (opts?.edit) (byId('edit-toggle') as HTMLButtonElement).click();
-  // Re-anchor on the edited bar (the rebuild resets scroll to the top). Done
-  // after the edit-toggle so the bar is in its grid-mode layout first.
-  if (opts?.focusBar != null) {
-    const row = byId('score').querySelector(`.bar-row[data-bar-index="${opts.focusBar}"]`);
-    row?.scrollIntoView({ block: 'start', behavior: 'auto' });
-  }
 }
 
 // Wire the "Tune" toggle + manual params panel (Phase 1). The panel lives in the

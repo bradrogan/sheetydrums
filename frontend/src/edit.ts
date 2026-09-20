@@ -93,16 +93,13 @@ export interface EditContext {
   editToggle: HTMLButtonElement;
   saveBtn: HTMLButtonElement;
   scoreEl: HTMLElement;
-  /** Persisted verified selections (the user layer), drawn as bands. */
+  /** Persisted verified selections (the user layer), drawn as bands. Mutated in
+   * place as selections are committed, so the score never needs a full reload. */
   selections: api.Selection[];
-  /** Re-fetch + re-render the project. Pass {edit:true} to re-enter edit mode
-   * after the rebuild, so a just-verified selection's band stays visible, and
-   * {focusBar} to scroll that bar back into view (the rebuild resets scroll). */
-  reload: (opts?: { edit?: boolean; focusBar?: number }) => void;
 }
 
 export function setupEditing(ctx: EditContext): void {
-  const { project, notation, model, sync, editToggle, saveBtn, scoreEl, reload } = ctx;
+  const { project, notation, model, sync, editToggle, saveBtn, scoreEl } = ctx;
   const videoId = project.video_id;
   const numerator = notation.time_signature.numerator;
   const maxSixteenth = Math.round((numerator / notation.time_signature.denominator) * SUBDIV);
@@ -164,20 +161,25 @@ export function setupEditing(ctx: EditContext): void {
 
   const commit = async (): Promise<void> => {
     const input = sel.toInput(notation);
-    const focusBar = sel.region()?.barStart;
+    let created: api.Selection;
     try {
-      await api.createSelection(videoId, input);
+      created = await api.createSelection(videoId, input);
     } catch (err) {
       alert(`Couldn't save selection: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
+    // Update in place — no re-fetch, no re-render, no scroll jump. The score
+    // already shows the edited notes (edits mutate `notation`, which the server
+    // just froze verbatim), so committing only flips the draft band (dashed) to
+    // a verified band (solid) where the user is already looking.
+    persisted.push(created);
     sel.clear();
     hideToolbar();
     editSession.dirty = false;
-    // Stay in edit mode after committing so the newly-verified band is visible
-    // (view mode is deliberately kept clear of bands), and re-anchor on the bar
-    // that was edited instead of jumping to the top.
-    reload({ edit: true, focusBar });
+    // Advance the discard baseline: a later Discard reverts only edits made
+    // after this commit, not the committed ones (which are already persisted).
+    saved = structuredClone(notation);
+    redrawBands();
   };
 
   const enterEditMode = (): void => {
