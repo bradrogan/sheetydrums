@@ -316,3 +316,39 @@ def test_clear_system_layer_404_when_absent(tmp_store: Any) -> None:
     assert ei.value.status_code == 404
     after = store.load_project(VID)
     assert after is not None and after["updated_at"] == before["updated_at"]
+
+
+# === read-path backstop + update-endpoint coverage =======================
+
+def test_get_project_409s_on_malformed_selection_record(tmp_store: Any) -> None:
+    """A hand-written selection missing a required key bypasses save-time
+    validation; the read backstop must turn the resulting KeyError into a 409,
+    not an unhandled 500 that bricks every read of the project."""
+    import json
+    path = store._store_dir / f"{VID}.json"
+    proj = json.loads(path.read_text())
+    # verified=True so compose processes it; missing bar_start → KeyError in the
+    # invariant check, which the backstop must convert to 409.
+    proj["selections"] = [{"selection_id": "sel_bad", "origin": "user", "lane": "hihat", "verified": True}]
+    path.write_text(json.dumps(proj))
+    for call in (server.get_project(VID), server.get_layers(VID), server.diagnose_project(VID)):
+        with pytest.raises(HTTPException) as ei:
+            _run(call)
+        assert ei.value.status_code == 409
+
+
+def test_update_selection_rejects_beyond_bars(tmp_store: Any) -> None:
+    sel = _run(server.create_selection(VID, _body(lane="hihat", bar_start=1, bar_end=1, notes=[], ops=[])))
+    with pytest.raises(HTTPException) as ei:
+        _run(server.update_selection(VID, sel["selection_id"],
+                                     _body(lane="hihat", bar_start=1, bar_end=99, notes=[], ops=[])))
+    assert ei.value.status_code == 400
+
+
+def test_update_selection_recomputes_fingerprint(tmp_store: Any) -> None:
+    sel = _run(server.create_selection(VID, _body(lane="hihat", bar_start=1, bar_end=1, notes=[], ops=[])))
+    # Extend the region to include bar 2 (which also has a hi-hat) → the region's
+    # base content changes, so the pinned fingerprint must be recomputed.
+    updated = _run(server.update_selection(VID, sel["selection_id"],
+                                           _body(lane="hihat", bar_start=1, bar_end=2, notes=[], ops=[])))
+    assert updated["base_fingerprint"] and updated["base_fingerprint"] != sel["base_fingerprint"]

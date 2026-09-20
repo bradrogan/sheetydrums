@@ -431,7 +431,10 @@ def _compose_or_409(project: dict[str, Any]) -> tuple[dict[str, Any], dict[int, 
     endpoint the client cannot discover, because listing the layers is itself a
     read. The write paths reject such a layer up front (`_save_selections_or_422`),
     so this is the backstop for a record that predates that check or was written
-    by hand; it says which endpoint clears it.
+    by hand; it says which endpoint clears it. A malformed hand-written record
+    can also be missing a required key or have a wrong-typed field, so KeyError /
+    TypeError are caught too — otherwise they'd defeat the backstop and 500 the
+    read, which is the exact outcome it exists to prevent.
     """
     try:
         return compose(
@@ -439,7 +442,7 @@ def _compose_or_409(project: dict[str, Any]) -> tuple[dict[str, Any], dict[int, 
             project.get("system_layer"),
             project.get("selections") or [],
         )
-    except (jsonschema.ValidationError, ValueError) as exc:
+    except (jsonschema.ValidationError, ValueError, KeyError, TypeError) as exc:
         video_id = project.get("video_id")
         raise HTTPException(
             409,
