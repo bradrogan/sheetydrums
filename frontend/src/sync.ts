@@ -22,14 +22,70 @@ export class SyncController {
   onSeek: (seconds: number) => void = () => {};
   /** Set by the caller; invoked (in edit mode) with the clicked bar + local svg coords. */
   onEditClick: (bar: BarView, x: number, y: number) => void = () => {};
+  /** Edit-mode lane-drag hooks (Phase 2d): a drag paints a lane × bar selection.
+   * The lane is derived by the caller from the start-bar's local svg `y`. */
+  onLaneDragStart: (bar: BarView, y: number) => void = () => {};
+  onLaneDragTo: (bar: BarView) => void = () => {};
+  onLaneDragEnd: () => void = () => {};
+
+  /** BarView by bar index, for locating the bar under the cursor mid-drag. */
+  private byIndex = new Map<number, BarView>();
+  /** True while a lane-drag is in progress; suppresses the trailing click. */
+  private dragging = false;
+  private suppressClick = false;
 
   constructor(model: RenderModel) {
     // Sorted by start time (bars come in order, but be defensive).
     this.bars = [...model.bars].sort((a, b) => a.startSeconds - b.startSeconds);
     for (const bar of this.bars) {
+      this.byIndex.set(bar.index, bar);
       bar.svgHost.style.cursor = 'pointer';
       bar.svgHost.addEventListener('click', (e) => this.handleClick(bar, e));
+      bar.svgHost.addEventListener('mousedown', (e) => this.handlePointerDown(bar, e));
     }
+  }
+
+  /** Start of a potential lane-drag (edit mode only). A drag only begins once the
+   * pointer moves past a small threshold, so a plain tap still opens the column
+   * editor via the click handler. */
+  private handlePointerDown(bar: BarView, e: MouseEvent): void {
+    if (!this.editMode || e.button !== 0) return;
+    const rect = bar.svgHost.getBoundingClientRect();
+    const startY = ((e.clientY - rect.top) / rect.height) * BAR_SVG_HEIGHT;
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+    this.dragging = false;
+
+    const onMove = (me: MouseEvent): void => {
+      if (!this.dragging) {
+        if (Math.hypot(me.clientX - startClientX, me.clientY - startClientY) < 4) return;
+        this.dragging = true;
+        preventSelection(true);
+        window.getSelection()?.removeAllRanges();
+        this.onLaneDragStart(bar, startY);
+      }
+      const overBar = this.barUnder(me.clientX, me.clientY);
+      if (overBar) this.onLaneDragTo(overBar);
+      me.preventDefault();
+    };
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', onUp, true);
+      preventSelection(false);
+      if (this.dragging) {
+        this.dragging = false;
+        this.suppressClick = true; // eat the click that follows this mouseup
+        this.onLaneDragEnd();
+      }
+    };
+    document.addEventListener('mousemove', onMove, true);
+    document.addEventListener('mouseup', onUp, true);
+  }
+
+  private barUnder(clientX: number, clientY: number): BarView | undefined {
+    const row = (document.elementFromPoint(clientX, clientY) as Element | null)?.closest('.bar-row');
+    const idx = row instanceof HTMLElement ? Number(row.dataset.barIndex) : NaN;
+    return Number.isNaN(idx) ? undefined : this.byIndex.get(idx);
   }
 
   /** Position the playhead + highlight for playback time `t` (seconds). */
@@ -105,6 +161,12 @@ export class SyncController {
   }
 
   private handleClick(bar: BarView, e: MouseEvent): void {
+    // A click synthesized at the end of a lane-drag is swallowed here so the
+    // drag doesn't also open the column editor / seek.
+    if (this.suppressClick) {
+      this.suppressClick = false;
+      return;
+    }
     // Convert the click from rendered pixels back into viewBox (800×140) units,
     // accounting for however much the SVG is scaled to fit its column.
     const rect = bar.svgHost.getBoundingClientRect();
@@ -155,6 +217,20 @@ function latestNoteBefore(bar: BarView, x: number): BarView['notes'][number] | n
 function hideOverlays(bar: BarView): void {
   bar.playhead.classList.remove('active');
   bar.highlight.classList.remove('active');
+}
+
+// Suppress native text/element selection for the duration of a lane-drag. Edit
+// mode re-enables user-select (see style.css), so without this a drag would
+// paint a browser text selection over the score.
+let _selectstartBlocker: ((e: Event) => void) | null = null;
+function preventSelection(on: boolean): void {
+  if (on && !_selectstartBlocker) {
+    _selectstartBlocker = (e: Event): void => e.preventDefault();
+    document.addEventListener('selectstart', _selectstartBlocker, true);
+  } else if (!on && _selectstartBlocker) {
+    document.removeEventListener('selectstart', _selectstartBlocker, true);
+    _selectstartBlocker = null;
+  }
 }
 
 function clamp(v: number, lo: number, hi: number): number {

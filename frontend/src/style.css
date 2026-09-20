@@ -683,6 +683,72 @@ button#edit-toggle.active {
   z-index: 1;
 }
 
+/* Verified-selection bands (Phase 2d): a lane × bar region highlighted on the
+   staff. `verified` = committed (solid green), `draft` = in-progress (dashed
+   cyan). Positioned inline (top/height/left/width as % of the viewBox). */
+.selection-band {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 3px;
+}
+.selection-band.verified {
+  background: rgba(157, 255, 60, 0.16);
+  outline: 1.5px solid rgba(157, 255, 60, 0.6);
+}
+.selection-band.draft {
+  background: rgba(45, 226, 255, 0.16);
+  outline: 1.5px dashed var(--crayon-blue);
+}
+
+/* Floating action bar for the active draft selection (Verify / Cancel). */
+.selection-toolbar {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  max-width: 92vw;
+  padding: 0.5rem 0.85rem;
+  background: #0f1f28;
+  color: #eafcff;
+  border: 2.5px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: var(--sticker);
+  font-size: 0.9rem;
+}
+.selection-toolbar-label {
+  font-weight: 700;
+  font-family: var(--font-hand);
+  font-size: 1.05rem;
+}
+.selection-toolbar-nudge {
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+.selection-toolbar button {
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  padding: 0.25rem 0.7rem;
+  font: inherit;
+  cursor: pointer;
+  background: #fff;
+  color: #04121a;
+}
+.selection-toolbar button.primary {
+  background: var(--crayon-green);
+  border-color: var(--crayon-green);
+}
+.selection-toolbar button.danger {
+  background: var(--crayon-red);
+  border-color: var(--crayon-red);
+  color: #fff;
+}
+
 /* Unsaved-changes modal (leaving edit mode). */
 .edit-modal-overlay {
   position: fixed;
