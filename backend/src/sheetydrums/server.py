@@ -325,7 +325,8 @@ def _settings_payload() -> dict[str, Any]:
 
 @app.get("/settings")
 async def get_settings() -> dict[str, Any]:
-    return _settings_payload()
+    # _settings_payload reads every project file for the count — off the loop.
+    return await asyncio.to_thread(_settings_payload)
 
 
 class UpdateSettings(BaseModel):
@@ -335,16 +336,26 @@ class UpdateSettings(BaseModel):
 
 @app.put("/settings")
 async def update_settings(req: UpdateSettings = Body(...)) -> dict[str, Any]:
-    """Change where projects are stored. With `move_existing`, existing project
-    files are moved into the new directory first."""
+    """Change where projects are stored. With `move_existing`, this store's own
+    project files are moved into the new directory first (unrelated files in the
+    old directory are left alone). 409s while a job is in flight."""
     path = req.projects_dir.strip()
     if not path:
         raise HTTPException(400, "Provide a `projects_dir`.")
+    # A worker thread resolves some paths up front and others (save_project) at
+    # the end, so switching the store mid-job would split a project across both
+    # directories — and the move could race a `.stages` dir being written.
+    if any(not job.done for job in _jobs.values()):
+        raise HTTPException(
+            409, "A job is still running — wait for it to finish before moving projects."
+        )
     try:
-        store.set_projects_dir(path, move_existing=req.move_existing)
+        # Blocking I/O: moving projects can be a cross-volume copy of every stem
+        # and stage artifact, which would stall all in-flight SSE streams.
+        await asyncio.to_thread(store.set_projects_dir, path, req.move_existing)
     except (ValueError, FileExistsError, OSError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    return _settings_payload()
+    return await asyncio.to_thread(_settings_payload)
 
 
 # === Project CRUD ===

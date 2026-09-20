@@ -201,3 +201,75 @@ def test_set_projects_dir_refuses_absolute_and_collision(tmp_path: Any, monkeypa
         store.set_projects_dir(new, move_existing=True)
     # Failed move must not have switched the active dir.
     assert store.get_projects_dir() == old
+
+
+def test_set_projects_dir_leaves_unrelated_files_alone(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A user-chosen projects dir may hold anything; a move touches only ours."""
+    old = tmp_path / "old"
+    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
+    store.save_project(_project("vid00000001"))
+    (old / "taxes.pdf").write_bytes(b"mine")
+    (old / "config.json").write_text('{"projects_dir": "/somewhere"}')  # not a project
+    (old / "Photos").mkdir()
+
+    store.set_projects_dir(tmp_path / "moved", move_existing=True)
+
+    assert (tmp_path / "moved" / "vid00000001.json").exists()
+    assert sorted(p.name for p in old.iterdir()) == ["Photos", "config.json", "taxes.pdf"]
+
+
+def test_set_projects_dir_refuses_nested_target(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nesting makes the move ill-defined, so it must be refused up front rather
+    than fail halfway through and strand projects."""
+    old = tmp_path / "old"
+    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
+    store.save_project(_project("vid00000001"))
+
+    with pytest.raises(ValueError, match="nested"):
+        store.set_projects_dir(old / "sub", move_existing=True)
+    with pytest.raises(ValueError, match="nested"):
+        store.set_projects_dir(old.parent, move_existing=True)
+
+    assert store.get_projects_dir() == old
+    assert (old / "vid00000001.json").exists()
+
+
+def test_set_projects_dir_rolls_back_a_partial_move(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    old = tmp_path / "old"
+    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
+    store.save_project(_project("vid00000001"))
+    store.append_event("vid00000001", "edits", {"op": "add"})
+    before = sorted(p.name for p in old.iterdir())
+    assert len(before) > 1  # need >1 entry for "partial" to mean anything
+
+    real_move = store.shutil.move
+    calls = {"n": 0}
+
+    def flaky(src: str, dst: str) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:  # second forward move fails; rollback still works
+            raise OSError("No space left on device")
+        return real_move(src, dst)
+
+    monkeypatch.setattr(store.shutil, "move", flaky)
+    new = tmp_path / "moved"
+    with pytest.raises(OSError):
+        store.set_projects_dir(new, move_existing=True)
+
+    assert sorted(p.name for p in old.iterdir()) == before
+    assert list(new.iterdir()) == []
+    assert store.get_projects_dir() == old
+
+
+def test_list_projects_skips_non_project_json(tmp_store: Any) -> None:
+    """The projects dir is user-chosen: a stray .json must not break the listing."""
+    store.save_project(_project("vid00000001"))
+    (tmp_store / "config.json").write_text('{"projects_dir": "/somewhere"}')
+    (tmp_store / "notes.json").write_text("[1, 2, 3]")
+    (tmp_store / "broken.json").write_text("{not json")
+
+    summaries = store.list_projects()
+    assert [s["video_id"] for s in summaries] == ["vid00000001"]
