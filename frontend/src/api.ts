@@ -252,6 +252,20 @@ export async function getSettings(): Promise<Settings> {
   return (await resp.json()) as Settings;
 }
 
+// Read-only directory listing for the projects-dir picker (GET /fs/list).
+export interface DirListing {
+  path: string;
+  parent: string | null;
+  entries: { name: string; path: string }[];
+  writable: boolean;
+}
+
+export async function listDir(path?: string): Promise<DirListing> {
+  const q = path ? `?path=${encodeURIComponent(path)}` : '';
+  const resp = await ok(await fetch(`/fs/list${q}`));
+  return (await resp.json()) as DirListing;
+}
+
 export async function updateSettings(projectsDir: string, moveExisting: boolean): Promise<Settings> {
   const resp = await ok(
     await fetch('/settings', {

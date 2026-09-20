@@ -21,6 +21,7 @@ via `store.py`, keyed by video id. Endpoints:
   DELETE /projects/{id}                    → remove
   GET    /settings                         → projects-dir settings
   PUT    /settings   {projects_dir, move_existing?} → change projects dir (opt. move files)
+  GET    /fs/list?path=            → list sub-directories (projects-dir picker)
 
 Single-user local-dev server. Job state lives in process memory; projects live
 on disk. The pipeline is blocking PyTorch code, so each job runs on a dedicated
@@ -31,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import queue
 import re
 import threading
@@ -38,6 +40,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -405,6 +408,56 @@ async def update_settings(req: UpdateSettings = Body(...)) -> dict[str, Any]:
         except (ValueError, FileExistsError, OSError) as exc:
             raise HTTPException(400, str(exc)) from exc
     return await asyncio.to_thread(_settings_payload)
+
+
+# === Filesystem directory picker (for the settings dialog) ===
+# A read-only directory lister so the settings UI can browse the local machine
+# to pick a projects dir, instead of typing an absolute path blind. The server
+# is bound to 127.0.0.1 and already exposes PUT /settings (which can point the
+# store at — and move files into — any absolute path), so listing directory
+# names is not a wider exposure; it just makes that same choice navigable.
+
+
+def _fs_list(path: str | None) -> dict[str, Any]:
+    """List the sub-directories of `path` (default: the current projects dir).
+    Non-existent paths resolve to their nearest existing ancestor so a
+    not-yet-created default (e.g. ~/.cache/sheetydrums/projects) still browses."""
+    base = Path(path).expanduser() if path else store.get_projects_dir()
+    if not base.is_absolute():
+        raise HTTPException(400, "Path must be absolute.")
+    # Walk up to the nearest existing ancestor rather than erroring on a
+    # not-yet-created directory.
+    while not base.exists() and base != base.parent:
+        base = base.parent
+    if not base.is_dir():
+        raise HTTPException(400, f"{base} is not a directory.")
+
+    entries: list[dict[str, str]] = []
+    try:
+        for child in sorted(base.iterdir(), key=lambda p: p.name.lower()):
+            try:
+                if child.is_dir():
+                    entries.append({"name": child.name, "path": str(child)})
+            except OSError:
+                continue  # broken symlink / unreadable entry — skip it
+    except PermissionError:
+        pass  # unreadable directory → empty listing (still navigable back up)
+
+    parent = str(base.parent) if base.parent != base else None
+    return {
+        "path": str(base),
+        "parent": parent,
+        "entries": entries,
+        "writable": os.access(base, os.W_OK),
+    }
+
+
+@app.get("/fs/list")
+async def fs_list(path: str | None = None) -> dict[str, Any]:
+    """Browse directories for the projects-dir picker. `path` defaults to the
+    current projects dir; returns the resolved path, its parent, and its
+    sub-directories."""
+    return await asyncio.to_thread(_fs_list, path)
 
 
 # === Project CRUD ===
