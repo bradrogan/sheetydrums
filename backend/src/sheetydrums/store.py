@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sheetydrums.validate import validate, validate_selection, validate_system_layer
+from sheetydrums.validate import validate, validate_selections, validate_system_layer
 
 _STORE_DIR: Path = Path.home() / ".cache" / "sheetydrums" / "projects"
 
@@ -106,8 +106,9 @@ def save_project(project: dict[str, Any]) -> dict[str, Any]:
     validate(project["notation"])
     # Tuning Phase 2 layers are additive/optional — validate only when present, so
     # pre-Phase-2 projects (no selections / system_layer) keep saving unchanged.
-    for sel in project.get("selections") or []:
-        validate_selection(sel)
+    # The whole list goes in at once: the "no two selections own one (lane, bar)"
+    # invariant is a property of the set, not of any single selection.
+    validate_selections(project.get("selections") or [])
     if project.get("system_layer") is not None:
         validate_system_layer(project["system_layer"])
 

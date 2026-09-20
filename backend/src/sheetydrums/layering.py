@@ -15,7 +15,7 @@ import copy
 from typing import Any
 
 from sheetydrums.anchor import DEFAULT_TOL, find_note, lane_of, parse_position
-from sheetydrums.validate import validate
+from sheetydrums.validate import check_selection_invariants, validate
 
 
 def verified_regions(selections: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
@@ -49,23 +49,38 @@ def _op_in_verified(op: dict[str, Any], regions: list[dict[str, Any]]) -> bool:
 
 
 def _find_pair(
-    pairs: list[list[Any]], position: str, instrument: str
+    pairs: list[list[Any]],
+    position: str,
+    instrument: str,
+    exclude: list[Any] | None = None,
 ) -> list[Any] | None:
-    match = find_note([p[0] for p in pairs], position, instrument, DEFAULT_TOL)
+    """The pair holding the `instrument` note nearest `position`, or None.
+    `exclude` skips one pair — used for destination-occupied checks, so a note
+    is never considered to collide with itself."""
+    candidates = [p for p in pairs if p is not exclude]
+    match = find_note([p[0] for p in candidates], position, instrument, DEFAULT_TOL)
     if match is None:
         return None
-    return next(p for p in pairs if p[0] is match)
+    return next(p for p in candidates if p[0] is match)
 
 
 def _apply_system_op(tagged: dict[int, list[list[Any]]], op: dict[str, Any]) -> None:
     """Apply one system op to the working per-bar pairs, tagging touched notes
     'system'. A system op referencing an absent bar is skipped (Phase 2 only
-    feeds well-formed fixtures)."""
+    feeds well-formed fixtures).
+
+    Collision semantics mirror `anchor._apply_op` (the other applier of this op
+    vocabulary): an op that would stack a second note of the same instrument at
+    one position is dropped rather than applied. `events.schema.json` has no
+    `uniqueItems`, so the closing `validate()` would not catch such a duplicate
+    — the renderer would just get two identical noteheads."""
     pairs = tagged.get(op["bar"])
     if pairs is None:
         return
     kind = op["kind"]
     if kind == "add":
+        if _find_pair(pairs, op["position"], op["instrument"]) is not None:
+            return  # already sounds here
         pairs.append([
             {"instrument": op["instrument"], "position": op["position"], "duration": op["duration"]},
             "system",
@@ -76,14 +91,20 @@ def _apply_system_op(tagged: dict[int, list[list[Any]]], op: dict[str, Any]) -> 
             pairs.remove(p)
     elif kind == "reclassify":
         p = _find_pair(pairs, op["position"], op["from"])
-        if p is not None:
-            p[0]["instrument"] = op["to"]
-            p[1] = "system"
+        if p is None:
+            return
+        if _find_pair(pairs, op["position"], op["to"], exclude=p) is not None:
+            return  # target instrument already sounds here
+        p[0]["instrument"] = op["to"]
+        p[1] = "system"
     elif kind == "move":
         p = _find_pair(pairs, op["from_position"], op["instrument"])
-        if p is not None:
-            p[0]["position"] = op["to_position"]
-            p[1] = "system"
+        if p is None:
+            return
+        if _find_pair(pairs, op["to_position"], op["instrument"], exclude=p) is not None:
+            return  # destination occupied
+        p[0]["position"] = op["to_position"]
+        p[1] = "system"
 
 
 def compose(
@@ -96,6 +117,10 @@ def compose(
     notes, in emitted order. Validates the composed notation before returning."""
     result = copy.deepcopy(base)
     regions = verified_regions(selections)
+    # `compose` is the single authority for the final notation, so it re-checks
+    # the user layer's cross-field invariants rather than trusting its caller.
+    # Pure Python (no jsonschema) — cheap enough for the read path.
+    check_selection_invariants(regions)
 
     # Start from base; every note tagged 'base'.
     tagged: dict[int, list[list[Any]]] = {

@@ -308,3 +308,84 @@ def test_validate_selection_rejects_bad_lane() -> None:
     sel = _selection(lane="hihat_closed")  # instrument class, not a lane key
     with pytest.raises(jsonschema.ValidationError):
         validate_selection(sel)
+
+
+# === selection invariants enforced at the store boundary ================
+
+def test_save_rejects_overlapping_same_lane_selections(tmp_store: Any) -> None:
+    # Overlap made composition order-dependent; the store must not hold it.
+    proj = _project()
+    proj["selections"] = [
+        _selection("sel_1", bar_start=1, bar_end=4),
+        _selection("sel_2", bar_start=3, bar_end=6),
+    ]
+    with pytest.raises(ValueError, match="must not overlap"):
+        store.save_project(proj)
+
+
+def test_save_allows_disjoint_same_lane_selections(tmp_store: Any) -> None:
+    proj = _project()
+    proj["selections"] = [
+        _selection("sel_1", bar_start=1, bar_end=2),
+        _selection("sel_2", bar_start=3, bar_end=4),
+    ]
+    saved = store.save_project(proj)
+    assert len(saved["selections"]) == 2
+
+
+def test_save_allows_same_bars_on_different_lanes(tmp_store: Any) -> None:
+    proj = _project()
+    snare = _selection("sel_2", lane="snare")
+    snare["notes"] = [{"bar": 1, "note": {"instrument": "snare", "position": "0", "duration": "1/8"}}]
+    proj["selections"] = [_selection("sel_1", lane="hihat"), snare]
+    saved = store.save_project(proj)
+    assert len(saved["selections"]) == 2
+
+
+def test_save_rejects_reversed_bar_range(tmp_store: Any) -> None:
+    sel = _selection(bar_start=4, bar_end=2)
+    sel["notes"] = [{"bar": 4, "note": {"instrument": "hihat_closed", "position": "0", "duration": "1/8"}}]
+    proj = _project()
+    proj["selections"] = [sel]
+    with pytest.raises(ValueError, match="before bar_start"):
+        store.save_project(proj)
+
+
+def test_save_rejects_frozen_note_outside_region(tmp_store: Any) -> None:
+    sel = _selection(bar_start=1, bar_end=2)
+    sel["notes"].append(
+        {"bar": 7, "note": {"instrument": "hihat_closed", "position": "0", "duration": "1/8"}})
+    proj = _project()
+    proj["selections"] = [sel]
+    with pytest.raises(ValueError, match="outside the selection's region"):
+        store.save_project(proj)
+
+
+def test_save_rejects_frozen_note_outside_lane(tmp_store: Any) -> None:
+    sel = _selection(lane="hihat")
+    sel["notes"].append(
+        {"bar": 1, "note": {"instrument": "ride", "position": "1/2", "duration": "1/8"}})
+    proj = _project()
+    proj["selections"] = [sel]
+    with pytest.raises(ValueError, match="belongs to lane 'ride'"):
+        store.save_project(proj)
+
+
+def test_save_rejects_unverified_selection(tmp_store: Any) -> None:
+    # compose() skips verified=False, so persisting one is a silent no-op.
+    sel = _selection()
+    sel["verified"] = False
+    proj = _project()
+    proj["selections"] = [sel]
+    with pytest.raises(jsonschema.ValidationError):
+        store.save_project(proj)
+
+
+def test_save_selections_rejects_overlap(tmp_store: Any) -> None:
+    store.save_project(_project())
+    with pytest.raises(ValueError, match="must not overlap"):
+        store.save_selections("abc12345678", [
+            _selection("sel_1", bar_start=1, bar_end=3),
+            _selection("sel_2", bar_start=2, bar_end=2),
+        ])
+    assert store.read_selections("abc12345678") == []  # nothing persisted

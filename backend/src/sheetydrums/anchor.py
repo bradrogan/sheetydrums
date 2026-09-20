@@ -37,6 +37,13 @@ def parse_position(position: str | Fraction) -> Fraction:
     return position if isinstance(position, Fraction) else Fraction(position)
 
 
+def canonical_position(position: str | Fraction) -> str:
+    """Lowest-terms string form of a position. The events-contract pattern admits
+    numerically-equal spellings ('0' / '0/1', '1/4' / '2/8'), so anything that
+    compares or hashes positions as text must canonicalize first."""
+    return str(parse_position(position))
+
+
 def find_note(
     notes: list[dict[str, Any]],
     position: str | Fraction,
@@ -62,17 +69,31 @@ def region_fingerprint(
 ) -> str:
     """Stable hash of the base notes in `lane` across bars [bar_start, bar_end].
     Recorded at verify time and re-checked on re-generation to detect that the
-    base under a verified region changed (region drift)."""
+    base under a verified region changed (region drift).
+
+    Positions are canonicalized so a re-spelling ('0' -> '0/1') is not mistaken
+    for drift, and `tuplet` is included so a re-grouped bracket — same positions
+    and durations, different bracket — is not mistaken for no change. `confidence`
+    is deliberately excluded: it moves on every re-run without changing the
+    notation the user verified."""
     items: list[list[Any]] = []
     for bar in notation["bars"]:
         if bar_start <= bar["index"] <= bar_end:
             for n in bar["notes"]:
                 if lane_of(n["instrument"]) == lane:
-                    items.append(
-                        [bar["index"], n["position"], n["instrument"],
-                         n.get("duration"), n.get("sustain_until")]
-                    )
-    items.sort(key=lambda it: (it[0], str(it[1]), it[2]))
+                    sustain = n.get("sustain_until")
+                    items.append([
+                        bar["index"],
+                        canonical_position(n["position"]),
+                        n["instrument"],
+                        n.get("duration"),
+                        canonical_position(sustain) if sustain is not None else None,
+                        n.get("tuplet"),
+                    ])
+    # Sort on the serialized item so the order is total: two notes agreeing on
+    # bar/position/instrument would otherwise fall back on the base's own list
+    # order, making the hash depend on something the notation does not fix.
+    items.sort(key=lambda it: json.dumps(it, sort_keys=True))
     return hashlib.sha256(json.dumps(items, sort_keys=True).encode()).hexdigest()
 
 
@@ -120,13 +141,17 @@ def _apply_op(
         n = find_note(notes, op["position"], op["from"], tol)
         if n is None:
             return False, None, f"reclassify: no {op['from']} near {op['position']} in bar {op['bar']}"
+        if find_note([x for x in notes if x is not n], op["position"], op["to"], tol) is not None:
+            return False, None, f"reclassify: {op['to']} already present near {op['position']} in bar {op['bar']}"
         n["instrument"] = op["to"]  # in place — preserves duration/sustain_until
         return True, n, None
     if kind == "move":
         n = find_note(notes, op["from_position"], op["instrument"], tol)
         if n is None:
             return False, None, f"move: no {op['instrument']} near {op['from_position']} in bar {op['bar']}"
-        if find_note(notes, op["to_position"], op["instrument"], tol) is not None:
+        # Exclude the moved note itself, so a sub-tolerance nudge is not read as
+        # the note colliding with where it already is.
+        if find_note([x for x in notes if x is not n], op["to_position"], op["instrument"], tol) is not None:
             return False, None, f"move: destination {op['to_position']} occupied in bar {op['bar']}"
         n["position"] = op["to_position"]  # in place — preserves duration/sustain_until
         return True, n, None

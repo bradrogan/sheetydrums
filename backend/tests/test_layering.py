@@ -213,3 +213,176 @@ def test_region_fingerprint_changes_with_lane_notes() -> None:
     fp = anchor.region_fingerprint(base, "hihat", 1, 1)
     _bar(base, 1)["notes"].append({"instrument": "hihat_open", "position": "1/2", "duration": "1/8"})
     assert anchor.region_fingerprint(base, "hihat", 1, 1) != fp
+
+
+# === invariant enforcement (was silent data loss) =======================
+
+def test_compose_rejects_reversed_bar_range() -> None:
+    # A reversed range made range(start, end+1) empty, so the whole selection
+    # was silently inert: lane never cleared, frozen notes never emitted.
+    base = _base()
+    sel = _selection("hihat", 2, 1, [
+        {"bar": 2, "note": {"instrument": "hihat_open", "position": "0", "duration": "1/8"}},
+    ])
+    with pytest.raises(ValueError, match="before bar_start"):
+        layering.compose(base, None, [sel])
+
+
+def test_compose_rejects_frozen_note_outside_region() -> None:
+    # Out-of-region frozen notes were dropped without a word.
+    base = _base()
+    sel = _selection("hihat", 1, 1, [
+        {"bar": 2, "note": {"instrument": "hihat_open", "position": "0", "duration": "1/8"}},
+    ])
+    with pytest.raises(ValueError, match="outside the selection's region"):
+        layering.compose(base, None, [sel])
+
+
+def test_compose_rejects_frozen_note_outside_lane() -> None:
+    # An out-of-lane note survived the lane clear and landed as a duplicate.
+    base = _base()
+    sel = _selection("hihat", 1, 1, [
+        {"bar": 1, "note": {"instrument": "snare", "position": "1/4", "duration": "1/8"}},
+    ])
+    with pytest.raises(ValueError, match="belongs to lane 'snare'"):
+        layering.compose(base, None, [sel])
+
+
+def test_compose_rejects_overlapping_same_lane_selections() -> None:
+    # Overlap made the output depend on list order: the later selection's lane
+    # clear wiped the earlier one's frozen notes in the overlap.
+    base = _base()
+    a = _selection("hihat", 1, 2, [
+        {"bar": 1, "note": {"instrument": "hihat_open", "position": "0", "duration": "1/8"}},
+    ])
+    a["selection_id"] = "a"
+    b = _selection("hihat", 2, 2, [
+        {"bar": 2, "note": {"instrument": "hihat_closed", "position": "1/2", "duration": "1/8"}},
+    ])
+    b["selection_id"] = "b"
+    for order in ([a, b], [b, a]):
+        with pytest.raises(ValueError, match="must not overlap"):
+            layering.compose(base, None, order)
+
+
+def test_adjacent_same_lane_selections_allowed() -> None:
+    # Touching but disjoint regions on one lane are fine — only overlap is rejected.
+    base = _base()
+    a = _selection("hihat", 1, 1, [
+        {"bar": 1, "note": {"instrument": "hihat_open", "position": "0", "duration": "1/8"}},
+    ])
+    a["selection_id"] = "a"
+    b = _selection("hihat", 2, 2, [
+        {"bar": 2, "note": {"instrument": "hihat_closed", "position": "1/2", "duration": "1/8"}},
+    ])
+    b["selection_id"] = "b"
+    eff, origin = layering.compose(base, None, [a, b])
+    assert [n["instrument"] for n in _bar(eff, 1)["notes"]
+            if lane_of(n["instrument"]) == "hihat"] == ["hihat_open"]
+    assert [n["position"] for n in _bar(eff, 2)["notes"]
+            if lane_of(n["instrument"]) == "hihat"] == ["1/2"]
+    assert origin[1].count("user") == 1 and origin[2].count("user") == 1
+
+
+def test_same_bar_different_lanes_allowed() -> None:
+    base = _base()
+    hat = _selection("hihat", 1, 1, [])
+    hat["selection_id"] = "h"
+    snare = _selection("snare", 1, 1, [
+        {"bar": 1, "note": {"instrument": "snare", "position": "0", "duration": "1/8"}},
+    ])
+    snare["selection_id"] = "s"
+    eff, _ = layering.compose(base, None, [hat, snare])
+    assert [n["position"] for n in _bar(eff, 1)["notes"] if n["instrument"] == "snare"] == ["0"]
+
+
+# === system-op collision guards =========================================
+
+def test_system_add_on_occupied_position_dropped() -> None:
+    # events.schema.json has no uniqueItems, so a duplicate would have survived
+    # compose's closing validate() and reached the renderer as stacked noteheads.
+    base = _base()
+    system = {"pass_id": "p1", "ops": [
+        {"kind": "add", "bar": 1, "position": "0", "instrument": "kick", "duration": "1/8", "origin": "system"},
+    ]}
+    eff, origin = layering.compose(base, system, [])
+    kicks = [n for n in _bar(eff, 1)["notes"] if n["instrument"] == "kick"]
+    assert len(kicks) == 1
+    assert "system" not in origin[1]
+
+
+def test_system_reclassify_onto_occupied_instrument_dropped() -> None:
+    base = _base()
+    _bar(base, 1)["notes"].append({"instrument": "ride", "position": "1/4", "duration": "1/8"})
+    system = {"pass_id": "p1", "ops": [
+        {"kind": "reclassify", "bar": 1, "position": "1/4", "from": "hihat_closed", "to": "ride", "origin": "system"},
+    ]}
+    eff, _ = layering.compose(base, system, [])
+    b1 = _bar(eff, 1)
+    assert len([n for n in b1["notes"] if n["instrument"] == "ride"]) == 1
+    assert any(n["instrument"] == "hihat_closed" and n["position"] == "1/4" for n in b1["notes"])
+
+
+def test_system_move_onto_occupied_position_dropped() -> None:
+    base = _base()
+    system = {"pass_id": "p1", "ops": [
+        {"kind": "move", "bar": 1, "from_position": "0", "to_position": "1/4",
+         "instrument": "hihat_closed", "origin": "system"},
+    ]}
+    eff, _ = layering.compose(base, system, [])
+    hats = sorted(n["position"] for n in _bar(eff, 1)["notes"] if n["instrument"] == "hihat_closed")
+    assert hats == ["0", "1/4"]  # unchanged
+
+
+def test_move_to_sub_tolerance_position_is_not_self_collision() -> None:
+    # The destination check must exclude the note being moved, or a nudge
+    # smaller than the match tolerance reads as "destination occupied".
+    base = _base()
+    _bar(base, 1)["notes"].append({"instrument": "ride", "position": "1/2", "duration": "1/8"})
+    ops = [{"kind": "move", "bar": 1, "from_position": "1/2", "to_position": "33/64",
+            "instrument": "ride"}]
+    new, conflicts = anchor.replay_ops(base, ops)
+    assert conflicts == []
+    assert anchor.find_note(_bar(new, 1)["notes"], "33/64", "ride") is not None
+
+
+def test_replay_reclassify_onto_occupied_instrument_conflicts() -> None:
+    base = _base()
+    _bar(base, 1)["notes"].append({"instrument": "ride", "position": "1/4", "duration": "1/8"})
+    ops = [{"kind": "reclassify", "bar": 1, "position": "1/4", "from": "hihat_closed", "to": "ride"}]
+    new, conflicts = anchor.replay_ops(base, ops)
+    assert len(conflicts) == 1 and "already present" in conflicts[0]["reason"]
+    assert len([n for n in _bar(new, 1)["notes"] if n["instrument"] == "ride"]) == 1
+
+
+# === fingerprint canonicalization =======================================
+
+def test_fingerprint_ignores_position_respelling() -> None:
+    base, respelled = _base(), _base()
+    hat = next(n for n in _bar(respelled, 1)["notes"] if n["position"] == "0"
+               and n["instrument"] == "hihat_closed")
+    hat["position"] = "0/1"  # numerically identical to "0"
+    assert anchor.region_fingerprint(base, "hihat", 1, 1) == \
+        anchor.region_fingerprint(respelled, "hihat", 1, 1)
+
+
+def test_fingerprint_ignores_sustain_respelling() -> None:
+    a, b = _base(), _base()
+    for notation, spelling in ((a, "1/2"), (b, "2/4")):
+        hat = next(n for n in _bar(notation, 1)["notes"] if n["position"] == "0"
+                   and n["instrument"] == "hihat_closed")
+        hat["instrument"] = "hihat_open"
+        hat["sustain_until"] = spelling
+    assert anchor.region_fingerprint(a, "hihat", 1, 1) == anchor.region_fingerprint(b, "hihat", 1, 1)
+
+
+def test_fingerprint_catches_tuplet_regrouping() -> None:
+    # Same positions and durations, different bracket — this used to read as "ok".
+    plain, tupleted = _base(), _base()
+    for notation in (plain, tupleted):
+        _bar(notation, 1)["notes"].append(
+            {"instrument": "hihat_closed", "position": "1/6", "duration": "1/8"})
+    hat = next(n for n in _bar(tupleted, 1)["notes"] if n["position"] == "1/6")
+    hat["tuplet"] = {"actual": 3, "normal": 2, "group": "t1"}
+    assert anchor.region_fingerprint(plain, "hihat", 1, 1) != \
+        anchor.region_fingerprint(tupleted, "hihat", 1, 1)
