@@ -41,7 +41,8 @@
     },
     "verified": {
       "type": "boolean",
-      "description": "True once the user has confirmed the region. Persisted selections are always true."
+      "const": true,
+      "description": "True once the user has confirmed the region. Persisted selections are always true — `const: true` so the store cannot hold a selection that the compose path would silently skip. Unverified in-progress selections live in client state only."
     },
     "base_fingerprint": {
       "type": "string",

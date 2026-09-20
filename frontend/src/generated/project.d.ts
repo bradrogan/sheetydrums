@@ -295,9 +295,9 @@ export interface VerifiedSelectionTuningPhase2UserLayer {
       }
   )[];
   /**
-   * True once the user has confirmed the region. Persisted selections are always true.
+   * True once the user has confirmed the region. Persisted selections are always true — `const: true` so the store cannot hold a selection that the compose path would silently skip. Unverified in-progress selections live in client state only.
    */
-  verified: boolean;
+  verified: true;
   /**
    * Hash of the base notes in this lane x bar region at verify time, for region-drift detection on re-generation.
    */
