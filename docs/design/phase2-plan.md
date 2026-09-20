@@ -1,6 +1,6 @@
 # Phase 2 Implementation Plan — Verified Selections + Provenance + Delta Preview
 
-**Status:** approved for build (owner decisions Q1–Q5 locked 2026-09-19). No code written yet.
+**Status:** in build (owner decisions Q1–Q5 locked 2026-09-19). **2a** (schemas + store persistence) and **2b** (layering engine + anchor/replay) have shipped to `main`; **2c** is next.
 **Source of truth:** [`ai-tuning-loop.md`](ai-tuning-loop.md) — Phasing, "Edit provenance & precedence", block 6 (operations log), block 7 (versioning), "Data-model changes".
 **Prerequisites (shipped):** Phase 0 (`PipelineParams` threading, stage cache, re-run DAG), Phase 1 (diagnostics summary + manual params panel + before/after diff).
 
@@ -68,16 +68,27 @@ Selections are created/edited **client-side as drafts**; nothing is persisted un
 {
   "selection_id": "sel_<uuid>",       // stable id for edit/undo
   "origin": "user",                   // provenance tag (always "user" here)
-  "lane": "hihat_closed",             // one schema drum class (the instrument lane)
+  "lane": "hihat",                    // the staff lane — its OWN 9-value vocabulary,
+                                      //  not the 10 drum classes: `hihat_closed` and
+                                      //  `hihat_open` share one `hihat` lane (open/closed
+                                      //  is a per-note property, so a verified hi-hat
+                                      //  region owns every closed AND open hat in it).
+                                      //  `hihat_chick` is its own lane. Mirrors edit.ts's
+                                      //  laneOf; `anchor.lane_of` re-implements it.
   "bar_start": 89,                    // inclusive schema bar index
   "bar_end": 100,                     // inclusive; lock granularity is WHOLE BARS (Q2)
   "notes": [                          // FROZEN closed-world ground truth:
-    // every corrected note for `lane` across bars 89..100, as full
-    // events-contract Note objects (position, instrument, duration,
-    // sustain_until where applicable). Authoritative at compose time AND
-    // the labels Phase 3's scorer reproduces. Frozen at verify time.
+    // every corrected note for `lane` across bars 89..100. Each is a
+    // RegionNote — a full events-contract Note (position, instrument,
+    // duration, sustain_until where applicable) TAGGED WITH ITS BAR, since
+    // `position` is bar-relative and the region spans many bars, so a bare
+    // Note would be ambiguous. Authoritative at compose time AND the labels
+    // Phase 3's scorer reproduces. Frozen at verify time.
+    {"bar": 91, "note": {"instrument": "hihat_open", "position": "1/4", "duration": "1/8"}}
   ],
   "ops": [                            // change-history + replay mechanism only:
+    // NB: op `instrument`/`from`/`to` ARE the 10-class instrument enum —
+    // only `lane` above uses the 9-value lane vocabulary.
     {"kind": "reclassify", "bar": 91, "position": "1/4",  "from": "hihat_closed", "to": "hihat_open"},
     {"kind": "delete",     "bar": 92, "position": "1/2",  "instrument": "hihat_closed"},
     {"kind": "add",        "bar": 93, "position": "0",    "instrument": "hihat_open", "duration": "1/8"},
@@ -114,15 +125,17 @@ Precedence enforced at compose time: **a system op is dropped if its `(bar, lane
 All anchor logic lives in **`anchor.py`** so a later swap to time-based anchoring is a one-file change.
 
 - **Position representation:** positions are already exact rationals in the events contract (`"1/4"`, parsed with `Fraction(...)`). The anchor keys on the **exact `Fraction(position)`**, never on `round(position * 16)`. It deliberately does **not** reuse the eval harness's `events_bar_hits` binning: that function collapses instrument classes (`_apply_collapses`) and clamps to 0–15, both wrong for a provenance anchor. (The v1 base is straight-16ths *today*; exact-position matching is a superset that costs nothing now and is triplet/tuplet-ready for v2.)
-- **`note_anchor(bar_index, position, instrument) -> (int, Fraction, str)`** — the anchor tuple.
-- **`match_note(base_notation, bar, position, instrument, tol) -> note | None`** — the note in `(bar, lane)` whose position is within `tol` of the target (nearest wins). `tol` is a `Fraction` defaulting to just under half the local grid spacing (≈`1/32` whole-note for a 16th grid) so adjacent slots (1/16 apart) never cross-match. Grid-agnostic: works for straight 16ths and triplets alike.
+- **`find_note(notes, position, instrument, tol) -> note | None`** — the `instrument` note in `notes` whose position is nearest `position` within `tol`. Takes **one bar's `notes` list**, so the caller selects the bar; there is no separate anchor-tuple helper (an earlier draft of this plan specified `note_anchor(...)` and a `match_note(base_notation, bar, ...)` taking the whole notation — neither was built, and the anchor tuple stayed implicit). `tol` is a `Fraction` compared strictly (`dist < tol`), defaulting to `DEFAULT_TOL = 1/32` whole-note — exactly half a 16th's spacing, so adjacent 16th slots never cross-match. Grid-agnostic: works for straight 16ths and triplets alike.
+- **`lane_of(instrument) -> lane`** — the instrument→lane mapping (`hihat_closed`/`hihat_open` → `hihat`, everything else to itself). Mirrors `edit.ts`'s `laneOf`; every lane comparison in `anchor.py` and `layering.py` goes through it.
+- **`canonical_position(position) -> str`** — lowest-terms string form, so anything comparing or hashing positions as text is immune to re-spellings (`"0"` vs `"0/1"`, `"1/4"` vs `"2/8"`).
+- **`region_fingerprint(notation, lane, bar_start, bar_end) -> str`** — the hash stored as `base_fingerprint`. Covers `bar`, canonicalized `position`, `instrument`, `duration`, canonicalized `sustain_until`, and `tuplet`; deliberately **excludes** `confidence`, which moves on every re-run without changing the notation the user verified. **Any new Note attribute must be added here** or a change to it will not read as drift.
 - **Op-level replay** (re-gen with "keep my edits"): for each user op, re-derive its anchor against the fresh base:
   - `reclassify`/`delete`/`move`: apply if the anchored note still matches; else **op conflict** → surface (auditionable, §2f).
   - `add`: re-add if absent at that position.
 - **Region-level drift** (distinct failure mode): before op replay, validate each verified selection's region against the new base:
   - `bar_end` exceeds the new bar count → **region conflict** (`"verified bars 89–100 no longer exist — song is now N bars"`); user keeps (clamp) or discards. Never silently dropped.
   - region survives but `base_fingerprint` mismatches → flag "base changed under your verified edits".
-- **`sustain_until` / `duration`:** `compose` applies the **frozen `notes`** (full Note objects), so these are preserved verbatim at compose time. On the replay path (ops onto a fresh base) the frozen note's `sustain_until`/`duration` are re-applied. Every composed/replayed result is re-run through `validate()` (cross-field `sustain_until` check is the backstop).
+- **`sustain_until` / `duration`:** `compose` applies the **frozen `notes`** (each a `{bar, note}` RegionNote carrying a full Note), so these are preserved verbatim at compose time. On the replay path (ops onto a fresh base) the frozen note's `sustain_until`/`duration` are re-applied. Every composed/replayed result is re-run through `validate()` (cross-field `sustain_until` check is the backstop).
 - **User = replay + lock; system = regenerated, not replayed.** On re-gen the system layer is cleared (Phase 3 would re-run its pass).
 
 ### 1.5 Effective-notation composition + origin map
@@ -139,6 +152,12 @@ effective, origin_map = compose(base, system_layer, selections)
 
 `compose` is pure, lives in **`layering.py`**, and is the single authority for "final notation."
 
+**Conflict rules.** Steps 2 and 3 each have a case the above glosses over. All three are enforced, because none of them is caught downstream:
+
+- **One owner per `(lane, bar)` — overlap is rejected, not resolved.** Step 3 clears the whole lane across a region before writing its frozen notes, so two verified selections overlapping on one lane would make the output depend on list order (the later one wipes the earlier one's ground truth, and drops it from Phase 3's labels). Rather than pick an order, overlap is refused: `validate._check_no_lane_overlap` runs in `store.save_project` **and** again inside `compose`. Selections on *different* lanes may share bars freely; touching-but-disjoint ranges on one lane are fine. **2d must therefore prevent or merge an overlapping drag** — the invariant cannot be left to the UI happening to behave.
+- **A `reclassify` op touches two lanes.** Step 2's "`(bar, lane)`" is singular, but a reclassify carries `from` and `to`, which can be different lanes (`snare` → `tom_mid`). The op is dropped if **either** lane is verified at that bar (`layering._op_lanes`) — the conservative reading, so a system pass can never reach into a user-owned lane from outside it.
+- **Duplicate-producing ops are dropped.** A system `add` onto a position its instrument already occupies, or a `reclassify`/`move` landing on one, is skipped rather than applied — matching `anchor._apply_op`'s conflict semantics for the same op vocabulary. This must live in steps 2/3: `events.schema.json` has **no `uniqueItems`**, so step 4's `validate()` would not catch a stacked duplicate, and the renderer would simply draw two identical noteheads.
+
 ### 1.6 Back-compat
 
 - `system_layer` and `selections` are **optional/additive** in `project.schema.json`. A legacy project lacking them loads unchanged; `compose(base, None, [])` returns `base` with an all-`base` origin map.
@@ -152,7 +171,7 @@ Data/plumbing first, UI last, integration capstone — mirroring how Phases 0/1 
 
 ### 2a — Schemas + store persistence (backend, no behaviour change)
 
-- **New** `schema/selection.schema.json` — the verified-selection record (§1.2); op shapes as `$defs` reused by the system layer; `notes` `$ref`s the existing Note `$def`; `lane`/`instrument`/`from`/`to` constrained to the 10-class enum; positions are pattern-validated rational strings.
+- **New** `schema/selection.schema.json` — the verified-selection record (§1.2); op shapes as `$defs` reused by the system layer; `notes` are `RegionNote`s (`{bar, note}`) whose `note` `$ref`s the existing Note `$def`; `lane` is constrained to the **9-value `Lane` enum** (§1.2 — `hihat` covers closed+open) while op `instrument`/`from`/`to` take the 10-class instrument enum; `verified` is `const: true` (persisted selections are always verified, so the store can't hold one `compose` would skip); positions are pattern-validated rational strings.
 - **New** `schema/system_layer.schema.json` (or `$defs` block) — §1.3.
 - **Edit** `schema/project.schema.json` — add `params` (already written but undeclared), `selections` (optional array, default `[]`), `system_layer` (optional, nullable). `notation` `$ref` stays pure. Document all three as additive/optional (§1.6).
 - **Edit** `store.py`: `save_selections` / `read_selections` (rewrite the field via `save_project`); `save_project` validates `system_layer`/`selections` **only when present**; `append_version(video_id, snapshot)` via the existing `append_event(video_id, "versions", …)`.
@@ -160,8 +179,8 @@ Data/plumbing first, UI last, integration capstone — mirroring how Phases 0/1 
 
 ### 2b — Layering engine + anchor/replay (backend, pure, no endpoints)
 
-- **New** `anchor.py`: `parse_position`→`Fraction`; `note_anchor`; `match_note(..., tol)` (§1.4); `replay_ops(base, ops, frozen_notes, tol) -> (new_notation, op_conflicts)`; `region_status(selection, base) -> "ok"|"drifted"|"missing"`.
-- **New** `layering.py`: `compose(base, system_layer, selections) -> (notation, origin_map)`; `region_contains(selection, bar, lane)` (**lane × bar**); `verified_regions(selections)`.
+- **New** `anchor.py`: `parse_position`→`Fraction`; `canonical_position`; `lane_of`; `find_note(notes, position, instrument, tol)` (§1.4); `region_fingerprint(notation, lane, bar_start, bar_end)`; `replay_ops(base, ops, frozen_notes, tol) -> (new_notation, op_conflicts)`; `region_status(selection, base) -> "ok"|"drifted"|"missing"`.
+- **New** `layering.py`: `compose(base, system_layer, selections) -> (notation, origin_map)`; `region_contains(selection, bar, lane)` (**lane × bar**); `verified_regions(selections)`. `compose` re-checks the §1.5 selection invariants itself (via `validate.check_selection_invariants`) rather than trusting its caller — it is the single authority, and the checks are pure Python.
 - **Tests** (`test_layering.py`): identity/legacy `compose(base, None, [])`; user overwrites its region + origin map tags `user`; system op inside a verified region dropped, outside applied + tagged `system` (synthetic fixture); later `pass_id` replaces earlier; `replay_ops` match/miss/add with exact-position tolerance, incl. a **triplet-position** case that must anchor exactly; frozen `sustain_until`/`duration` preserved; `region_status` missing/drifted; composed output always passes `validate()` (incl. a `hihat_open` sustain case).
 
 ### 2c — Selection endpoints + layered read (backend HTTP)
@@ -184,6 +203,7 @@ Data/plumbing first, UI last, integration capstone — mirroring how Phases 0/1 
 - **Edit** `sync.ts`: add pointer `mousedown/mousemove/mouseup` alongside the existing `click` binding, gated on `editMode`, reusing px→viewBox conversion; emit `onLaneSelect/extend/commit`; `preventDefault` on `selectstart`/`dragstart` inside the drag.
 - **Edit** `edit.ts`: `setupEditing` wires the `SelectionController`; `addNote`/`deleteNote`/`setInstrument` record **both an op (exact position) and the resulting note** into the active draft selection, so verify-time freezes `notes` and submits `ops`.
 - **UI:** drag in edit mode paints a lane × bar rectangle; **the rectangle shows the whole bar(s) being locked** (Q2), both edges draggable; "mark verified" freezes `notes` + POSTs; single-bar weak-signal nudge.
+- **Overlap is the controller's problem, not the backend's** (§1.5): a drag or edge-adjust that would make a verified region overlap an existing one *on the same lane* must be clamped or merged into the existing selection before submitting. The backend rejects overlap (HTTP 400 from `save_project`), so shipping this without the client-side guard turns an ordinary drag into an error toast. Different lanes sharing bars are fine, as is a range that merely touches another's edge.
 - **Flam hook (notation-support deliverable, not built here):** structure the beat editor so a future "flam/grace" affordance drops in per stroke without a rewrite — see [`grace-notes-flams.md`](grace-notes-flams.md). Phase 2 only leaves the seam.
 - **Tests:** drive via the `verify`/`run` skill (create → adjust edges → mark verified → observe overlay + POST payload incl. materialized `notes`).
 
@@ -231,17 +251,17 @@ Resolved by Q1–Q5 (baked into 2a–2f): storage of the user layer (field, not 
 Remaining / to watch:
 
 1. **Anchor drift at meter changes.** Exact-position anchoring is stable across classification retunes; conflicts arise mainly when a param changes bar count/meter. Handled by region-drift detection + auditionable conflict review. Time-based anchoring stays the escape hatch (isolated in `anchor.py`).
-2. **Tolerance tuning.** `match_note`'s `tol` must stay below half the local grid spacing. Default ≈`1/32` whole-note for a 16th grid; revisit if triplet detection (v2) lands.
+2. **Tolerance tuning.** `find_note`'s `tol` must stay at or below half the local grid spacing. `DEFAULT_TOL` is `1/32` whole-note — exactly half a 16th's spacing, compared strictly — and nearest-wins disambiguates when two candidates are in range. On a mixed straight+triplet grid the safe tolerance is smaller (`1/12` and `1/16` sit only `1/48` apart); revisit if triplet detection (v2) lands.
 3. **Composition-authority shift.** `GET`/`diagnose` now serve effective — the biggest behavioural change. Legacy projects (no selections) get `effective == base`, so their behaviour is unchanged.
 
 ---
 
 ## 5. Recommended merge order
 
-1. **CSS selection-bug fix** (already PR'd, #28) — smallest, independent.
-2. **2a** schemas + store persistence — settled data model, zero endpoint/UI change, fully unit-testable; dependency root.
-3. **2b** layering + anchor (reviewable in parallel with 2a; depends only on 2a's schemas).
-4. **2c** endpoints + layered read.
+1. **CSS selection-bug fix** (PR #28) — smallest, independent. *Still open.*
+2. ~~**2a** schemas + store persistence~~ — **shipped** (PR #30). Settled data model, zero endpoint/UI change, fully unit-testable; dependency root.
+3. ~~**2b** layering + anchor~~ — **shipped** (PR #31), together with a review pass that added the §1.5 conflict rules and the selection invariant checks.
+4. **2c** endpoints + layered read — **next**.
 5. **2d → 2e → 2f → 2g** frontend + integration.
 
 The **grace-note/flam notation feature** ([`grace-notes-flams.md`](grace-notes-flams.md)) is independent of Phase 2 and can land on its own track; Phase 2 only leaves the 2d editing seam.

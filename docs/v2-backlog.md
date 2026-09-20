@@ -61,8 +61,10 @@ This is mostly a frontend project but implies two backend changes: (a) persist t
 > (diagnostics summary + manual params panel + before/after diff) have **shipped**.
 > **Phase 2** (verified selections + user/system provenance + delta preview) is
 > specced and approved in [`docs/design/phase2-plan.md`](design/phase2-plan.md)
-> (owner decisions Q1–Q5 locked 2026-09-19). Phases 3–5 (edit-scored search,
-> local LLM, versioning UI) follow.
+> (owner decisions Q1–Q5 locked 2026-09-19) and is **in build**: **2a** (schemas +
+> store persistence) and **2b** (layering engine + anchor/replay) have shipped;
+> **2c** (selection endpoints + layered read) is next. Phases 3–5 (edit-scored
+> search, local LLM, versioning UI) follow.
 
 Idea from Brad (2026-07): make the pipeline self-improving per song rather than relying on one static set of thresholds. Three connected pieces:
 

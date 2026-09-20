@@ -40,11 +40,11 @@ Approach — add an optional `grace` object to a Note:
 ```
 
 Notes on the shape:
-- The grace note is **attached to** its primary note (not a separate array element), which matches how a flam is one musical gesture and keeps quantization/anchoring on the primary note's exact `position`. Phase 2's exact-position anchoring (see [`phase2-plan.md`](phase2-plan.md) §1.4) therefore covers grace-bearing notes with no extra work — the grace rides along with the frozen note.
+- The grace note is **attached to** its primary note (not a separate array element), which matches how a flam is one musical gesture and keeps quantization/anchoring on the primary note's exact `position`. Phase 2's exact-position anchoring (see [`phase2-plan.md`](phase2-plan.md) §1.4) matches on `(position, instrument)`, so it locates grace-bearing notes unchanged, and `compose` deep-copies frozen notes so a `grace` survives composition untouched. **Two Phase 2 functions enumerate note attributes explicitly and will silently ignore `grace` until it is added to them** (see **Sequencing** step 1 below) — the same treatment `tuplet` and `sustain_until` already get.
 - No independent timing for the grace: a flam's micro-offset is a *rendering* convention, not quantized data. This keeps the schema honest (we don't have sub-slot timing in v1) and avoids implying a precision the pipeline can't produce.
 - `grace.instrument` allows a cross-voice grace later, but defaults to the primary's instrument.
 
-The validator (`validate.py`) gets a light check: `grace.instrument` must be in the 10-class enum.
+`grace.instrument` is constrained by `$ref`ing the existing instrument enum in the schema itself — **not** by a hand-written check in `validate.py`, which is reserved for constraints JSON Schema cannot express (`_check_sustain_until`, the selection invariants in §1.5 of the Phase 2 plan).
 
 ## Render
 
@@ -58,7 +58,21 @@ In the beat editor (`edit.ts` column/beat popover), each present stroke gains a 
 
 Independent of Phase 2 and mergeable on its own track:
 
-1. **Schema + validator** — add optional `grace`, regenerate the frontend types (`json-schema-to-typescript` build step), light validator check. No behaviour change until something emits/edits it.
+1. **Schema + the two attribute-enumerating call sites** — add optional `grace` to the Note
+   `$def`, `$ref`ing the instrument enum for `grace.instrument`, and regenerate the frontend
+   types (`json-schema-to-typescript` build step). Then update the two places in `anchor.py`
+   that list note attributes by hand, or a user's flam will be lost/ignored with no error:
+   - **`region_fingerprint`** hashes `[bar, position, instrument, duration, sustain_until,
+     tuplet]`. `grace` must join that list. This is not hypothetical: the "Manual editing"
+     section above notes that pre-Phase-2 a flam toggle "flows through the existing edit→save
+     path", and that path writes `project["notation"]` — the **base** layer. So a flam added to
+     or removed from the base underneath a verified region would not register as drift, and
+     `region_status` would keep reporting `ok`.
+   - **`_restore_attributes`** re-applies only `duration` and `sustain_until` from the matching
+     frozen note onto a replayed note, so a replayed `reclassify` on a grace-bearing note would
+     drop the user's flam.
+
+   No behaviour change until something emits/edits `grace`.
 2. **Render** — draw `grace` via VexFlow grace notes.
 3. **Editor affordance** — the per-stroke flam toggle.
 
