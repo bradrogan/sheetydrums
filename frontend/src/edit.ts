@@ -96,8 +96,9 @@ export interface EditContext {
   /** Persisted verified selections (the user layer), drawn as bands. */
   selections: api.Selection[];
   /** Re-fetch + re-render the project. Pass {edit:true} to re-enter edit mode
-   * after the rebuild, so a just-verified selection's band stays visible. */
-  reload: (opts?: { edit?: boolean }) => void;
+   * after the rebuild, so a just-verified selection's band stays visible, and
+   * {focusBar} to scroll that bar back into view (the rebuild resets scroll). */
+  reload: (opts?: { edit?: boolean; focusBar?: number }) => void;
 }
 
 export function setupEditing(ctx: EditContext): void {
@@ -163,6 +164,7 @@ export function setupEditing(ctx: EditContext): void {
 
   const commit = async (): Promise<void> => {
     const input = sel.toInput(notation);
+    const focusBar = sel.region()?.barStart;
     try {
       await api.createSelection(videoId, input);
     } catch (err) {
@@ -173,8 +175,9 @@ export function setupEditing(ctx: EditContext): void {
     hideToolbar();
     editSession.dirty = false;
     // Stay in edit mode after committing so the newly-verified band is visible
-    // (view mode is deliberately kept clear of bands).
-    reload({ edit: true });
+    // (view mode is deliberately kept clear of bands), and re-anchor on the bar
+    // that was edited instead of jumping to the top.
+    reload({ edit: true, focusBar });
   };
 
   const enterEditMode = (): void => {
