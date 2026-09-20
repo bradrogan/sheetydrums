@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from sheetydrums import store
+from sheetydrums import layering, store
 
 _NOTATION: dict[str, Any] = {
     "version": "1",
@@ -382,3 +382,280 @@ def test_dotted_video_id_rejected(bad: str) -> None:
     dotted id would disagree with `_known_video_ids` and be left behind."""
     with pytest.raises(ValueError):
         store.event_log_path(bad, "edits")
+
+
+# === Tuning Phase 2: verified selections + system layer =================
+
+import jsonschema  # noqa: E402
+
+from sheetydrums.validate import validate_selection  # noqa: E402
+
+
+def _selection(
+    sid: str = "sel_1", lane: str = "hihat", bar_start: int = 1, bar_end: int = 1
+) -> dict[str, Any]:
+    return {
+        "selection_id": sid,
+        "origin": "user",
+        "lane": lane,
+        "bar_start": bar_start,
+        "bar_end": bar_end,
+        "notes": [
+            {"bar": bar_start, "note": {"instrument": "hihat_closed", "position": "0", "duration": "1/8"}},
+            {"bar": bar_start, "note": {"instrument": "hihat_open", "position": "1/4", "duration": "1/8"}},
+        ],
+        "ops": [
+            {"kind": "reclassify", "bar": bar_start, "position": "1/4",
+             "from": "hihat_closed", "to": "hihat_open"},
+        ],
+        "verified": True,
+    }
+
+
+def _system_layer(pass_id: str = "pass_1") -> dict[str, Any]:
+    return {
+        "pass_id": pass_id,
+        "ops": [
+            {"kind": "add", "bar": 1, "position": "1/2",
+             "instrument": "hihat_closed", "duration": "1/8", "origin": "system"},
+        ],
+    }
+
+
+def test_save_and_read_selections_roundtrip(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.save_selections("abc12345678", [_selection()])
+    sels = store.read_selections("abc12345678")
+    assert len(sels) == 1 and sels[0]["selection_id"] == "sel_1"
+    loaded = store.load_project("abc12345678")
+    assert loaded is not None and loaded["selections"][0]["lane"] == "hihat"
+
+
+def test_read_selections_missing_project_or_field(tmp_store: Any) -> None:
+    assert store.read_selections("abc12345678") == []  # no project
+    store.save_project(_project())
+    assert store.read_selections("abc12345678") == []  # project, no selections
+
+
+def test_edit_selection_rewrites_field(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.save_selections("abc12345678", [_selection(bar_end=1)])
+    store.save_selections("abc12345678", [_selection(bar_end=4)])  # extend the range
+    sels = store.read_selections("abc12345678")
+    assert len(sels) == 1 and sels[0]["bar_end"] == 4
+
+
+def test_delete_one_selection_leaves_others(tmp_store: Any) -> None:
+    store.save_project(_project())
+    snare_sel = _selection("sel_2", lane="snare")
+    snare_sel["notes"] = [{"bar": 1, "note": {"instrument": "snare", "position": "1/4", "duration": "1/8"}}]
+    snare_sel["ops"] = []
+    store.save_selections("abc12345678", [_selection("sel_1"), snare_sel])
+    remaining = [
+        s for s in store.read_selections("abc12345678") if s["selection_id"] != "sel_1"
+    ]
+    store.save_selections("abc12345678", remaining)
+    ids = [s["selection_id"] for s in store.read_selections("abc12345678")]
+    assert ids == ["sel_2"]
+
+
+def test_save_selections_missing_project_raises(tmp_store: Any) -> None:
+    with pytest.raises(KeyError):
+        store.save_selections("abc12345678", [_selection()])
+
+
+def test_save_project_rejects_invalid_selection(tmp_store: Any) -> None:
+    proj = _project()
+    bad = _selection()
+    bad["lane"] = "cowbell"  # not in the 10-class enum
+    proj["selections"] = [bad]
+    with pytest.raises(jsonschema.ValidationError):
+        store.save_project(proj)
+
+
+def test_save_project_rejects_invalid_system_layer(tmp_store: Any) -> None:
+    proj = _project()
+    proj["system_layer"] = {"pass_id": "pass_1", "ops": [{"kind": "frobnicate", "bar": 1}]}
+    with pytest.raises(jsonschema.ValidationError):
+        store.save_project(proj)
+
+
+def test_system_layer_roundtrip(tmp_store: Any) -> None:
+    proj = _project()
+    proj["system_layer"] = _system_layer()
+    store.save_project(proj)
+    loaded = store.load_project("abc12345678")
+    assert loaded is not None and loaded["system_layer"]["pass_id"] == "pass_1"
+
+
+def test_legacy_project_without_layers_still_saves(tmp_store: Any) -> None:
+    # A pre-Phase-2 project (no selections / system_layer) must save + load unchanged.
+    saved = store.save_project(_project())
+    assert "selections" not in saved and "system_layer" not in saved
+    assert store.load_project("abc12345678") is not None
+
+
+def test_append_version_writes_log(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.append_version("abc12345678", {"notation": _NOTATION, "parent_version": None})
+    versions = store.read_events("abc12345678", "versions")
+    assert len(versions) == 1 and versions[0]["at"]  # timestamp stamped
+
+
+def test_delete_project_removes_version_log(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.append_version("abc12345678", {"notation": _NOTATION})
+    assert store.event_log_path("abc12345678", "versions").exists()
+    store.delete_project("abc12345678")
+    assert not store.event_log_path("abc12345678", "versions").exists()
+
+
+def test_validate_selection_accepts_all_op_kinds() -> None:
+    sel = _selection()
+    sel["ops"] = [
+        {"kind": "add", "bar": 1, "position": "0", "instrument": "snare", "duration": "1/8"},
+        {"kind": "delete", "bar": 1, "position": "1/4", "instrument": "snare"},
+        {"kind": "reclassify", "bar": 1, "position": "1/2", "from": "hihat_closed", "to": "hihat_open"},
+        {"kind": "move", "bar": 1, "from_position": "1/8", "to_position": "3/16", "instrument": "kick"},
+    ]
+    validate_selection(sel)  # no raise
+
+
+def test_validate_selection_rejects_unknown_op_kind() -> None:
+    sel = _selection()
+    sel["ops"] = [{"kind": "warp", "bar": 1, "position": "0"}]
+    with pytest.raises(jsonschema.ValidationError):
+        validate_selection(sel)
+
+
+def test_validate_selection_rejects_out_of_enum_instrument() -> None:
+    sel = _selection()
+    sel["notes"] = [{"bar": 1, "note": {"instrument": "triangle", "position": "0", "duration": "1/8"}}]
+    with pytest.raises(jsonschema.ValidationError):
+        validate_selection(sel)
+
+
+def test_validate_selection_rejects_bad_lane() -> None:
+    sel = _selection(lane="hihat_closed")  # instrument class, not a lane key
+    with pytest.raises(jsonschema.ValidationError):
+        validate_selection(sel)
+
+
+# === selection invariants enforced at the store boundary ================
+
+def test_save_rejects_overlapping_same_lane_selections(tmp_store: Any) -> None:
+    # Overlap made composition order-dependent; the store must not hold it.
+    proj = _project()
+    proj["selections"] = [
+        _selection("sel_1", bar_start=1, bar_end=4),
+        _selection("sel_2", bar_start=3, bar_end=6),
+    ]
+    with pytest.raises(ValueError, match="must not overlap"):
+        store.save_project(proj)
+
+
+def test_save_allows_disjoint_same_lane_selections(tmp_store: Any) -> None:
+    proj = _project()
+    proj["selections"] = [
+        _selection("sel_1", bar_start=1, bar_end=2),
+        _selection("sel_2", bar_start=3, bar_end=4),
+    ]
+    saved = store.save_project(proj)
+    assert len(saved["selections"]) == 2
+
+
+def test_save_allows_same_bars_on_different_lanes(tmp_store: Any) -> None:
+    proj = _project()
+    snare = _selection("sel_2", lane="snare")
+    snare["notes"] = [{"bar": 1, "note": {"instrument": "snare", "position": "0", "duration": "1/8"}}]
+    proj["selections"] = [_selection("sel_1", lane="hihat"), snare]
+    saved = store.save_project(proj)
+    assert len(saved["selections"]) == 2
+
+
+def test_save_rejects_reversed_bar_range(tmp_store: Any) -> None:
+    sel = _selection(bar_start=4, bar_end=2)
+    sel["notes"] = [{"bar": 4, "note": {"instrument": "hihat_closed", "position": "0", "duration": "1/8"}}]
+    proj = _project()
+    proj["selections"] = [sel]
+    with pytest.raises(ValueError, match="before bar_start"):
+        store.save_project(proj)
+
+
+def test_save_rejects_frozen_note_outside_region(tmp_store: Any) -> None:
+    sel = _selection(bar_start=1, bar_end=2)
+    sel["notes"].append(
+        {"bar": 7, "note": {"instrument": "hihat_closed", "position": "0", "duration": "1/8"}})
+    proj = _project()
+    proj["selections"] = [sel]
+    with pytest.raises(ValueError, match="outside the selection's region"):
+        store.save_project(proj)
+
+
+def test_save_rejects_frozen_note_outside_lane(tmp_store: Any) -> None:
+    sel = _selection(lane="hihat")
+    sel["notes"].append(
+        {"bar": 1, "note": {"instrument": "ride", "position": "1/2", "duration": "1/8"}})
+    proj = _project()
+    proj["selections"] = [sel]
+    with pytest.raises(ValueError, match="belongs to lane 'ride'"):
+        store.save_project(proj)
+
+
+def test_save_rejects_unverified_selection(tmp_store: Any) -> None:
+    # compose() skips verified=False, so persisting one is a silent no-op.
+    sel = _selection()
+    sel["verified"] = False
+    proj = _project()
+    proj["selections"] = [sel]
+    with pytest.raises(jsonschema.ValidationError):
+        store.save_project(proj)
+
+
+def test_save_selections_rejects_overlap(tmp_store: Any) -> None:
+    store.save_project(_project())
+    with pytest.raises(ValueError, match="must not overlap"):
+        store.save_selections("abc12345678", [
+            _selection("sel_1", bar_start=1, bar_end=3),
+            _selection("sel_2", bar_start=2, bar_end=2),
+        ])
+    assert store.read_selections("abc12345678") == []  # nothing persisted
+
+
+# === the two halves together (Phase 2 layers + a projects-dir move) ====
+
+def test_phase2_project_survives_a_projects_dir_move(
+    isolated_store: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A move must carry a project's Phase 2 sidecars, not just its JSON.
+
+    `_owned_entries` claims `<video_id>.*` siblings, which is what makes the
+    `versions` log Phase 2 added come along — worth pinning, since the two
+    features were developed on separate branches and nothing else covers the
+    combination.
+    """
+    src, target = isolated_store
+    vid = "abc12345678"
+    store.save_project({**_project(vid), "selections": [_selection()]})
+    store.append_version(vid, {"notation": _NOTATION})
+    store.stem_path(vid).write_text("stem")
+    store.stages_dir(vid).mkdir()
+    (store.stages_dir(vid) / "01-separation.bin").write_text("cached")
+    before = sorted(p.name for p in src.iterdir())
+    assert f"{vid}.versions.jsonl" in before  # the Phase 2 sidecar
+
+    store.set_projects_dir(target, move_existing=True)
+
+    assert sorted(p.name for p in target.iterdir()) == before
+    assert not list(src.iterdir())  # nothing stranded
+    project = store.load_project(vid)
+    assert project is not None
+    assert [s["selection_id"] for s in store.read_selections(vid)] == ["sel_1"]
+    assert len(store.read_events(vid, "versions")) == 1
+    assert store.has_stem(vid) and store.stages_dir(vid).exists()
+    # and the composed notation still resolves from the moved project
+    effective, origins = layering.compose(
+        project["notation"], project.get("system_layer"), project.get("selections")
+    )
+    assert "user" in origins[1]
+    assert any(n["instrument"] == "hihat_open" for n in effective["bars"][0]["notes"])

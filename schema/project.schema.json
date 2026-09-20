@@ -30,7 +30,25 @@
     },
     "notation": {
       "$ref": "events.schema.json",
-      "description": "The drum transcription — the events.json contract, unchanged."
+      "description": "The drum transcription — the events.json contract, unchanged. This is the BASE layer: the generator's output, replaced wholesale on re-generation. The notation the client renders/plays is the *composed* effective notation (base + system + verified selections), derived on read."
+    },
+    "params": {
+      "type": "object",
+      "description": "The PipelineParams used to produce this project's transcription, persisted for reproducible re-runs. Shape is owned by params.py; opaque to this schema.",
+      "additionalProperties": true
+    },
+    "selections": {
+      "type": "array",
+      "items": { "$ref": "selection.schema.json" },
+      "default": [],
+      "description": "User layer: verified correction selections (tuning Phase 2). Additive/optional — absent on pre-Phase-2 projects. User edits are inviolable and always win at compose time."
+    },
+    "system_layer": {
+      "description": "System layer: the current 'fix the rest' pass (tuning Phase 3), or null/absent when none. Additive/optional — absent on pre-Phase-2 projects.",
+      "oneOf": [
+        { "$ref": "system_layer.schema.json" },
+        { "type": "null" }
+      ]
     },
     "created_at": {
       "type": "string",

@@ -29,6 +29,20 @@ export interface DrumProjectV1 {
   };
   notation: DrumTranscriptionEventsV1Draft;
   /**
+   * The PipelineParams used to produce this project's transcription, persisted for reproducible re-runs. Shape is owned by params.py; opaque to this schema.
+   */
+  params?: {
+    [k: string]: unknown;
+  };
+  /**
+   * User layer: verified correction selections (tuning Phase 2). Additive/optional — absent on pre-Phase-2 projects. User edits are inviolable and always win at compose time.
+   */
+  selections?: VerifiedSelectionTuningPhase2UserLayer[];
+  /**
+   * System layer: the current 'fix the rest' pass (tuning Phase 3), or null/absent when none. Additive/optional — absent on pre-Phase-2 projects.
+   */
+  system_layer?: SystemLayerTuningPhase2ContainerFilledByPhase3 | null;
+  /**
    * ISO 8601 timestamp when the project was first created (server-set).
    */
   created_at?: string;
@@ -46,7 +60,7 @@ export interface DrumProjectV1 {
   has_drumless?: boolean;
 }
 /**
- * The drum transcription — the events.json contract, unchanged.
+ * The drum transcription — the events.json contract, unchanged. This is the BASE layer: the generator's output, replaced wholesale on re-generation. The notation the client renders/plays is the *composed* effective notation (base + system + verified selections), derived on read.
  */
 export interface DrumTranscriptionEventsV1Draft {
   version: "1";
@@ -120,4 +134,379 @@ export interface Note {
    * Classifier confidence. Useful for filtering or highlighting uncertain hits in the UI.
    */
   confidence?: number;
+}
+/**
+ * A closed-world, fully-labelled correction patch over one instrument LANE across a range of whole bars. Every note the user left in the region counts as ground truth alongside the ones they changed, giving the future param search both positive and negative labels. Persisted selections are always verified. The frozen `notes` are authoritative at compose time; `ops` are the change-history/replay mechanism only. See docs/design/phase2-plan.md §1.2.
+ */
+export interface VerifiedSelectionTuningPhase2UserLayer {
+  /**
+   * Stable id (e.g. 'sel_<uuid>') for edit/undo.
+   */
+  selection_id: string;
+  /**
+   * Provenance tag. Always 'user' for a verified selection.
+   */
+  origin: "user";
+  /**
+   * The single instrument lane this selection owns.
+   */
+  lane: "kick" | "snare" | "hihat" | "hihat_chick" | "ride" | "crash" | "tom_high" | "tom_mid" | "tom_low";
+  /**
+   * First bar of the locked region (inclusive, 1-based).
+   */
+  bar_start: number;
+  /**
+   * Last bar of the locked region (inclusive, 1-based). >= bar_start. Lock granularity is whole bars.
+   */
+  bar_end: number;
+  /**
+   * Frozen closed-world ground truth: every corrected note for `lane` across bars bar_start..bar_end, each tagged with its bar (a within-bar position alone is ambiguous across a multi-bar region). Authoritative at compose time and the labels the param search reproduces.
+   */
+  notes: RegionNote[];
+  /**
+   * The edits that produced `notes`, kept for the change-log UI and anchor-replay-on-regen. Secondary to `notes`.
+   */
+  ops: (
+    | {
+        kind: "add";
+        bar: number;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        position: string;
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        instrument:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Written note value. For tuplet notes this is the *written* duration; the actual played duration is duration * normal / actual. Drums are notated per-instrument-voice, so duration is a visual hint and does not imply temporal exclusivity (e.g., a crash with duration '1' doesn't prevent other instruments from sounding within the same bar).
+         */
+        duration: "1" | "1/2" | "1/4" | "1/8" | "1/16" | "1/32";
+        /**
+         * Which layer authored this op. Omitted on user selection ops (implied user); set to 'system' on system-layer ops.
+         */
+        origin?: "user" | "system";
+      }
+    | {
+        kind: "delete";
+        bar: number;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        position: string;
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        instrument:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Which layer authored this op. Omitted on user selection ops (implied user); set to 'system' on system-layer ops.
+         */
+        origin?: "user" | "system";
+      }
+    | {
+        kind: "reclassify";
+        bar: number;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        position: string;
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        from:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        to:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Which layer authored this op. Omitted on user selection ops (implied user); set to 'system' on system-layer ops.
+         */
+        origin?: "user" | "system";
+      }
+    | {
+        kind: "move";
+        bar: number;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        from_position: string;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        to_position: string;
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        instrument:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Which layer authored this op. Omitted on user selection ops (implied user); set to 'system' on system-layer ops.
+         */
+        origin?: "user" | "system";
+      }
+  )[];
+  /**
+   * True once the user has confirmed the region. Persisted selections are always true — `const: true` so the store cannot hold a selection that the compose path would silently skip. Unverified in-progress selections live in client state only.
+   */
+  verified: true;
+  /**
+   * Hash of the base notes in this lane x bar region at verify time, for region-drift detection on re-generation.
+   */
+  base_fingerprint?: string;
+  /**
+   * ISO 8601 timestamp when the selection was verified (server-set).
+   */
+  created_at?: string;
+}
+export interface RegionNote {
+  /**
+   * 1-based bar this frozen note belongs to. Must fall within [bar_start, bar_end].
+   */
+  bar: number;
+  note: Note1;
+}
+/**
+ * A full events-contract Note. Its instrument must belong to `lane` (lane_of(instrument) == lane).
+ */
+export interface Note1 {
+  /**
+   * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+   */
+  instrument:
+    | "kick"
+    | "snare"
+    | "hihat_closed"
+    | "hihat_open"
+    | "hihat_chick"
+    | "ride"
+    | "crash"
+    | "tom_high"
+    | "tom_mid"
+    | "tom_low";
+  /**
+   * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+   */
+  position: string;
+  /**
+   * Written note value. For tuplet notes this is the *written* duration; the actual played duration is duration * normal / actual. Drums are notated per-instrument-voice, so duration is a visual hint and does not imply temporal exclusivity (e.g., a crash with duration '1' doesn't prevent other instruments from sounding within the same bar).
+   */
+  duration: "1" | "1/2" | "1/4" | "1/8" | "1/16" | "1/32";
+  /**
+   * Optional explicit end position where this note stops ringing, expressed as a fraction of a whole note from the *originating* bar's downbeat — same units and reference point as `position`. Only meaningful for sustaining instruments (currently hihat_open). When absent, the implicit rule applies: an open hat sustains until the next hihat_* event in the score (closed, open, or chick). Use sustain_until for silent closes — when the drummer damps the cymbal without a chick or subsequent stick hit. Values past the originating bar's end are allowed and indicate the sustain rings into subsequent bars (e.g., position '3/4', sustain_until '5/4' in 4/4 means the open hat rings from beat 4 of this bar through beat 2 of the next). The renderer determines which bars the sustain crosses based on the time signature. Must be greater than `position`.
+   */
+  sustain_until?: string;
+  /**
+   * Marks this note as part of a tuplet group. Notes sharing the same `group` value within the same bar render under one bracket, regardless of instrument. The renderer determines bracket first/last by sorting group members on `position`. Tuplet groups do not cross bar lines.
+   */
+  tuplet?: {
+    /**
+     * Number of notes actually played in the bracket (3 for triplet, 5 for quintuplet, 6 for sextuplet).
+     */
+    actual: number;
+    /**
+     * Number of notes the bracket would normally occupy (2 for 8th-note triplet, 4 for sextuplet, 3 for duplet in compound time).
+     */
+    normal: number;
+    /**
+     * Identifier shared by all notes in the same visual bracket. Must be unique within the bar; any short string (e.g., 't1', 't2').
+     */
+    group: string;
+  };
+  /**
+   * Classifier confidence. Useful for filtering or highlighting uncertain hits in the UI.
+   */
+  confidence?: number;
+}
+/**
+ * The edits a 'fix the rest of the song' pass proposes. A single object, replaced wholesale per pass_id (a later pass supersedes the earlier one). At compose time, a system op is dropped if its (bar, lane) falls inside any verified selection's region — user edits are inviolable. Phase 2 only builds/enforces this container; no Phase 2 code produces a system op. See docs/design/phase2-plan.md §1.3.
+ */
+export interface SystemLayerTuningPhase2ContainerFilledByPhase3 {
+  /**
+   * Stable id (e.g. 'pass_<uuid>') for the pass. A new pass replaces the previous system layer wholesale.
+   */
+  pass_id: string;
+  /**
+   * ISO 8601 timestamp when the pass was produced (server-set).
+   */
+  created_at?: string;
+  /**
+   * The proposed edits, same op shapes as a selection's ops; each carries origin='system'.
+   */
+  ops: (
+    | {
+        kind: "add";
+        bar: number;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        position: string;
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        instrument:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Written note value. For tuplet notes this is the *written* duration; the actual played duration is duration * normal / actual. Drums are notated per-instrument-voice, so duration is a visual hint and does not imply temporal exclusivity (e.g., a crash with duration '1' doesn't prevent other instruments from sounding within the same bar).
+         */
+        duration: "1" | "1/2" | "1/4" | "1/8" | "1/16" | "1/32";
+        /**
+         * Which layer authored this op. Omitted on user selection ops (implied user); set to 'system' on system-layer ops.
+         */
+        origin?: "user" | "system";
+      }
+    | {
+        kind: "delete";
+        bar: number;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        position: string;
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        instrument:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Which layer authored this op. Omitted on user selection ops (implied user); set to 'system' on system-layer ops.
+         */
+        origin?: "user" | "system";
+      }
+    | {
+        kind: "reclassify";
+        bar: number;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        position: string;
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        from:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        to:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Which layer authored this op. Omitted on user selection ops (implied user); set to 'system' on system-layer ops.
+         */
+        origin?: "user" | "system";
+      }
+    | {
+        kind: "move";
+        bar: number;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        from_position: string;
+        /**
+         * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
+         */
+        to_position: string;
+        /**
+         * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+         */
+        instrument:
+          | "kick"
+          | "snare"
+          | "hihat_closed"
+          | "hihat_open"
+          | "hihat_chick"
+          | "ride"
+          | "crash"
+          | "tom_high"
+          | "tom_mid"
+          | "tom_low";
+        /**
+         * Which layer authored this op. Omitted on user selection ops (implied user); set to 'system' on system-layer ops.
+         */
+        origin?: "user" | "system";
+      }
+  )[];
 }
