@@ -187,6 +187,10 @@ button:disabled {
   grid-template-columns: 1fr;
   gap: 0.3rem 0; /* bars on the same line touch — no horizontal gap */
   align-content: start;
+  /* No drag-highlighting the score during playback; selection is an edit-mode
+     affordance only (re-enabled under #score.editing). Click-to-seek still works. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Two bars per line once the score column is wide enough for it. */
@@ -521,6 +525,9 @@ button#edit-toggle.active {
 #score.editing {
   outline: 3px dashed var(--crayon-blue);
   outline-offset: 4px;
+  /* Let users highlight/select the score while editing. */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .edit-popover {
