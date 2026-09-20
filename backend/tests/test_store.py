@@ -273,3 +273,112 @@ def test_list_projects_skips_non_project_json(tmp_store: Any) -> None:
 
     summaries = store.list_projects()
     assert [s["video_id"] for s in summaries] == ["vid00000001"]
+
+
+# === failure reporting on a projects-dir move ==========================
+
+
+@pytest.fixture()
+def isolated_store(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Store dir, config, and a move target all under one per-test tmp dir.
+
+    `tmp_path.parent` is shared across the whole pytest run, so a target placed
+    there leaks between tests; and the config must be patched or a successful
+    move writes the developer's real ~/.cache/sheetydrums/config.json.
+    """
+    src = tmp_path / "store"
+    src.mkdir()
+    monkeypatch.setattr(store, "_STORE_DIR", src)
+    monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
+    return src, tmp_path / "moved"  # siblings: not nested, so the move is allowed
+
+
+def test_config_write_failure_after_move_names_the_new_location(
+    isolated_store: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post-move config failure used to surface as a bare errno, leaving the
+    user with files in the new dir, a config naming the old one, and projects
+    that look lost after a restart."""
+    _, target = isolated_store
+    store.save_project(_project())
+    real_write = store._atomic_write_text
+
+    def failing_write(path: Any, text: str) -> None:
+        if path == store._CONFIG_PATH:
+            raise OSError("Read-only file system")
+        real_write(path, text)
+
+    monkeypatch.setattr(store, "_atomic_write_text", failing_write)
+    with pytest.raises(OSError) as ei:
+        store.set_projects_dir(target, move_existing=True)
+
+    msg = str(ei.value)
+    assert str(target) in msg          # where the files actually are
+    assert "survive a restart" in msg  # and what to do about it
+    assert (target / "abc12345678.json").exists()
+
+
+def test_failed_rollback_names_the_stranded_entries(
+    isolated_store: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rollback used to swallow its own failures, so a split store was reported
+    as if the move had cleanly done nothing."""
+    src, target = isolated_store
+    store.save_project(_project())
+    (src / "abc12345678.drums.wav").write_text("stem")
+    real_move = store.shutil.move
+    calls = {"n": 0}
+
+    def flaky_move(s: str, d: str) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("disk full")            # fail the second move
+        if calls["n"] == 3:
+            raise OSError("rollback failed too")  # and fail undoing the first
+        return real_move(s, d)
+
+    monkeypatch.setattr(store.shutil, "move", flaky_move)
+    with pytest.raises(OSError) as ei:
+        store.set_projects_dir(target, move_existing=True)
+
+    msg = str(ei.value)
+    assert "could not be fully undone" in msg
+    assert "disk full" in msg    # the original cause is still reported
+    assert "abc12345678" in msg  # and which entry is stranded
+    assert str(target) in msg and str(src) in msg
+
+
+def test_clean_rollback_still_raises_the_original_error(
+    isolated_store: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # When rollback succeeds the caller should see the real cause, not a
+    # "stranded entries" message, and nothing should have moved.
+    src, target = isolated_store
+    store.save_project(_project())
+    (src / "abc12345678.drums.wav").write_text("stem")
+    real_move = store.shutil.move
+    calls = {"n": 0}
+
+    def flaky_move(s: str, d: str) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("disk full")
+        return real_move(s, d)
+
+    monkeypatch.setattr(store.shutil, "move", flaky_move)
+    with pytest.raises(OSError) as ei:
+        store.set_projects_dir(target, move_existing=True)
+    assert "disk full" in str(ei.value)
+    assert "could not be fully undone" not in str(ei.value)
+    assert sorted(p.name for p in src.iterdir()) == [
+        "abc12345678.drums.wav", "abc12345678.json"
+    ]
+    assert store.get_projects_dir() == src  # never switched
+
+
+@pytest.mark.parametrize("bad", ["a.b", "abc.json", ".", "..", ""])
+def test_dotted_video_id_rejected(bad: str) -> None:
+    """`_owned_entries` keys an entry by the segment before its first dot, so a
+    dotted id would disagree with `_known_video_ids` and be left behind."""
+    with pytest.raises(ValueError):
+        store.event_log_path(bad, "edits")

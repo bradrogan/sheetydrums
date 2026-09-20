@@ -60,15 +60,30 @@ _jobs: dict[str, JobState] = {}
 # reconnect to a recently-finished job.
 _MAX_JOBS: int = 32
 
+# Serializes *registering* a job against a projects-dir migration. Checking
+# `_jobs` and then awaiting the move is not enough on its own: the await yields
+# the loop for the whole migration (potentially a cross-volume copy of every
+# stem), and a job starting in that window binds its paths in the old directory
+# while `save_project` re-resolves to the new one — splitting the project across
+# both. With this lock the two orderings are the only ones possible: either the
+# job lands in `_jobs` first and the migration sees it and 409s, or the
+# migration holds the lock and the job waits for it. Job registration holds the
+# lock only briefly, so there is no meaningful contention.
+_migration_lock: asyncio.Lock = asyncio.Lock()
+
 
 app: FastAPI = FastAPI(title="sheetydrums")
-# CORS open — local-dev server, never bound off 127.0.0.1. Vite dev proxies
-# requests anyway, so this only matters if you hit the API directly from a
-# different origin.
+# CORS is limited to the Vite dev origins rather than "*". Binding to 127.0.0.1
+# keeps other machines out but not other *pages*: nothing here is authenticated,
+# and a JSON `PUT /settings` preflights — which "*" would approve — so any site
+# the user happens to have open could relocate the whole project store (or
+# DELETE a project). Normal use goes through the Vite proxy and is same-origin,
+# so this list only matters when hitting the API directly in development.
+_DEV_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=_DEV_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -130,14 +145,16 @@ async def transcribe(req: TranscribeRequest = Body(...)) -> dict[str, Any]:
     # authoritative video id from the project in the terminal `result` event.
     job_id: str = uuid.uuid4().hex
     job: JobState = JobState()
-    _prune_jobs()
-    _jobs[job_id] = job
-
-    threading.Thread(
-        target=_run_job,
-        args=(job, url, req.use_drumsep),
-        daemon=True,
-    ).start()
+    # Registered under the migration lock so a projects-dir switch can't start
+    # between this job appearing and its worker resolving store paths.
+    async with _migration_lock:
+        _prune_jobs()
+        _jobs[job_id] = job
+        threading.Thread(
+            target=_run_job,
+            args=(job, url, req.use_drumsep),
+            daemon=True,
+        ).start()
 
     return {"status": "job", "job_id": job_id}
 
@@ -345,16 +362,19 @@ async def update_settings(req: UpdateSettings = Body(...)) -> dict[str, Any]:
     # A worker thread resolves some paths up front and others (save_project) at
     # the end, so switching the store mid-job would split a project across both
     # directories — and the move could race a `.stages` dir being written.
-    if any(not job.done for job in _jobs.values()):
-        raise HTTPException(
-            409, "A job is still running — wait for it to finish before moving projects."
-        )
-    try:
-        # Blocking I/O: moving projects can be a cross-volume copy of every stem
-        # and stage artifact, which would stall all in-flight SSE streams.
-        await asyncio.to_thread(store.set_projects_dir, path, req.move_existing)
-    except (ValueError, FileExistsError, OSError) as exc:
-        raise HTTPException(400, str(exc)) from exc
+    # The lock spans the check *and* the move: checking first and then awaiting
+    # would leave the whole migration open for a new job to start in.
+    async with _migration_lock:
+        if any(not job.done for job in _jobs.values()):
+            raise HTTPException(
+                409, "A job is still running — wait for it to finish before moving projects."
+            )
+        try:
+            # Blocking I/O: moving projects can be a cross-volume copy of every
+            # stem and stage artifact, which would stall in-flight SSE streams.
+            await asyncio.to_thread(store.set_projects_dir, path, req.move_existing)
+        except (ValueError, FileExistsError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
     return await asyncio.to_thread(_settings_payload)
 
 
@@ -447,13 +467,14 @@ async def retune(video_id: str, req: RetuneRequest = Body(...)) -> dict[str, Any
         raise HTTPException(404, f"No project for video_id {video_id!r}")
     job_id: str = uuid.uuid4().hex
     job: JobState = JobState()
-    _prune_jobs()
-    _jobs[job_id] = job
-    threading.Thread(
-        target=_run_retune_job,
-        args=(job, video_id, req.params),
-        daemon=True,
-    ).start()
+    async with _migration_lock:  # see `_migration_lock`
+        _prune_jobs()
+        _jobs[job_id] = job
+        threading.Thread(
+            target=_run_retune_job,
+            args=(job, video_id, req.params),
+            daemon=True,
+        ).start()
     return {"status": "job", "job_id": job_id}
 
 

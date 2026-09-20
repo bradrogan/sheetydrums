@@ -98,7 +98,18 @@ def set_projects_dir(new_dir: Path | str, move_existing: bool = False) -> Path:
     # Switch in memory before persisting: once the files have moved, the running
     # process must follow them even if writing the config file fails.
     _STORE_DIR = target
-    _persist_store_dir(target)
+    try:
+        _persist_store_dir(target)
+    except OSError as exc:
+        # The move already happened, so this is not a clean failure: the config
+        # still names `old`, and after a restart `_load_store_dir()` would send
+        # the app to a directory the projects have left — they'd look lost. Say
+        # where they are instead of surfacing a bare errno.
+        raise OSError(
+            f"Projects were moved to {target}, but the new location could not be "
+            f"saved to {_CONFIG_PATH} ({exc}). This session is using {target}; "
+            "set the directory again to make it survive a restart."
+        ) from exc
     return target
 
 
@@ -149,12 +160,24 @@ def _move_projects(old: Path, target: Path) -> None:
             dest = target / entry.name
             shutil.move(str(entry), str(dest))
             moved.append((entry, dest))
-    except BaseException:
+    except BaseException as exc:
+        # Undo what moved. A rollback that itself fails leaves the store split,
+        # which is the one outcome this function promises not to produce — so
+        # name the stranded entries rather than reporting only the original
+        # error and letting it look like a clean no-op.
+        stranded: list[Path] = []
         for src, dest in reversed(moved):
             try:
                 shutil.move(str(dest), str(src))
             except OSError:
-                pass  # best effort — the original failure is what matters
+                stranded.append(dest)
+        if stranded:
+            raise OSError(
+                f"Move failed ({exc}) and could not be fully undone. These "
+                f"entries are now in {target} while the store still reads "
+                f"{old}: {', '.join(sorted(p.name for p in stranded))}. Move "
+                "them back by hand, or point the store at the new directory."
+            ) from exc
         raise
 
 
@@ -170,8 +193,11 @@ def _persist_store_dir(dir_: Path) -> None:
 
 def _check_video_id(video_id: str) -> None:
     # video_id is a YouTube id ([A-Za-z0-9_-]{11}); reject anything that could
-    # escape the store dir.
-    if "/" in video_id or "\\" in video_id or video_id in ("", ".", ".."):
+    # escape the store dir. A dot is rejected too: `_owned_entries` keys an
+    # entry by the segment before its first dot, so a dotted id would disagree
+    # with `_known_video_ids` (which uses `.stem`) and the project's own JSON
+    # would be left behind by a move.
+    if not video_id or any(c in video_id for c in "/\\."):
         raise ValueError(f"Invalid video_id: {video_id!r}")
 
 

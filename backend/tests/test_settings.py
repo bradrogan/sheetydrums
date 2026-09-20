@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import inspect
+import time
+from typing import Any, cast
 
 import pytest
 from fastapi import HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from sheetydrums import server, store
 
@@ -61,3 +64,81 @@ def test_update_settings_allowed_once_jobs_are_done(tmp_cfg: Any, monkeypatch: p
     new = tmp_cfg / "elsewhere"
     s = asyncio.run(server.update_settings(server.UpdateSettings(projects_dir=str(new))))
     assert s["projects_dir"] == str(new)
+
+
+# === migration is atomic against job registration ======================
+
+def test_job_cannot_register_during_a_migration(
+    tmp_cfg: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard must span the whole move, not just the instant before it.
+
+    Checking `_jobs` and then awaiting the move leaves the entire migration open
+    for a new job to start in — and that job binds its paths in the old dir
+    while save_project re-resolves to the new one.
+    """
+    order: list[str] = []
+    real_set = store.set_projects_dir
+
+    def slow_set(new_dir: Any, move_existing: bool = False) -> Any:
+        order.append("migration:start")
+        time.sleep(0.15)  # the window the unlocked version left open
+        result = real_set(new_dir, move_existing)
+        order.append("migration:end")
+        return result
+
+    real_prune = server._prune_jobs
+
+    def recording_prune() -> None:
+        order.append("job:registered")  # runs inside the lock, before _jobs[...]
+        real_prune()
+
+    monkeypatch.setattr(store, "set_projects_dir", slow_set)
+    monkeypatch.setattr(server, "_prune_jobs", recording_prune)
+    def no_pipeline(*_args: Any) -> None:  # don't actually run a pipeline
+        return None
+
+    monkeypatch.setattr(server, "_run_job", no_pipeline)
+
+    async def scenario() -> None:
+        migration = asyncio.create_task(
+            server.update_settings(
+                server.UpdateSettings(
+                    projects_dir=str(tmp_cfg / "elsewhere"), move_existing=True
+                )
+            )
+        )
+        await asyncio.sleep(0.05)  # let the migration get inside the move
+        job = asyncio.create_task(
+            server.transcribe(
+                server.TranscribeRequest(url="https://youtu.be/abc12345678")
+            )
+        )
+        await migration
+        await job
+
+    asyncio.run(scenario())
+    assert order == ["migration:start", "migration:end", "job:registered"]
+
+
+def test_retune_also_registers_under_the_lock() -> None:
+    # Both job-starting endpoints must take the lock, or the other one is a hole.
+    src = inspect.getsource(server.retune)
+    assert "_migration_lock" in src
+
+
+# === CORS is not wildcarded ============================================
+
+def test_cors_origins_are_not_wildcard() -> None:
+    """`PUT /settings` moves the whole store and needs no credentials, so a
+    wildcard would let any page the user has open drive it."""
+    cors = [m for m in server.app.user_middleware if m.cls is CORSMiddleware]
+    assert len(cors) == 1
+    origins = cast("list[str]", cors[0].kwargs["allow_origins"])
+    methods = cast("list[str]", cors[0].kwargs["allow_methods"])
+    assert "*" not in origins
+    assert all(
+        o.startswith("http://localhost") or o.startswith("http://127.0.0.1")
+        for o in origins
+    )
+    assert "*" not in methods
