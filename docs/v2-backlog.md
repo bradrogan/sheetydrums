@@ -13,6 +13,7 @@ Items explicitly out of scope for v1 that we want to revisit when the v1 pipelin
 
 - **Triplet / tuplet detection** — schema supports tuplet groups with cross-instrument `group` IDs. v1 quantization snaps everything to straight 16ths. Approach: per-bar grid search over {straight, swing, 8th-triplet, 16th-triplet} subdivisions, pick the lowest-residual fit.
 - **Ghost notes** — quieter snare hits that carry musical meaning. Detect via per-hit velocity from ADTOF logits and a low-confidence threshold. Notation: parenthesised note heads.
+- **Flam / grace-note *detection*** — automatically finding a soft grace stroke ~15–40 ms before a primary hit. Needs sub-16th onset timing + per-hit velocity that the v1 straight-16th quantizer doesn't expose; bundle with ghost notes / dynamics. **Note:** grace-note & flam *notation support* (schema + render + manual editing) is already approved and specced separately in [`design/grace-notes-flams.md`](design/grace-notes-flams.md) — only automatic detection is deferred here.
 - **Dynamics** — accents, crescendos, mf/f sections. Mostly an emit-stage concern once we expose per-hit velocity.
 - **Swing / shuffle feel** — top-level "feel" annotation on the score. Detect via IOI ratios on consecutive 8ths within a bar.
 
@@ -47,15 +48,21 @@ A transcription is rarely perfect. v1 produces `events.json` and stops; v2 shoul
 
 This is mostly a frontend project but implies two backend changes: (a) persist the drum stem from the separation stage, and (b) possibly emit a richer events.json that retains the raw onset times alongside the quantized positions, so edits can re-quantize without re-running the pipeline.
 
-## Adaptive tuning (AI-in-the-loop)  ← NEXT UP
+## Adaptive tuning (AI-in-the-loop)  ← IN PROGRESS
 
-> **Now the planned next feature.** Full design (locked decisions, parameter
-> catalog, stage-caching DAG, local-LLM choice, edit-scored search, phasing) is in
+> **In build.** Full design (locked decisions, parameter catalog, stage-caching
+> DAG, local-LLM choice, edit-scored search, phasing) is in
 > [`docs/design/ai-tuning-loop.md`](design/ai-tuning-loop.md). Decisions since this
 > sketch: parameterize *all* meaningful knobs; run a **local open-source LLM**
 > (free); suggestion = **LLM + automated param search scored against the user's
-> edits**; input allows **bar/note selection**. Start with Phase 0 (params +
-> stage caching) — it also makes every ordinary re-run cheap.
+> edits**; input allows **bar/note selection**.
+>
+> **Progress:** Phase 0 (params threading + stage cache + re-run DAG) and Phase 1
+> (diagnostics summary + manual params panel + before/after diff) have **shipped**.
+> **Phase 2** (verified selections + user/system provenance + delta preview) is
+> specced and approved in [`docs/design/phase2-plan.md`](design/phase2-plan.md)
+> (owner decisions Q1–Q5 locked 2026-09-19). Phases 3–5 (edit-scored search,
+> local LLM, versioning UI) follow.
 
 Idea from Brad (2026-07): make the pipeline self-improving per song rather than relying on one static set of thresholds. Three connected pieces:
 
