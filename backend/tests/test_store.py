@@ -151,3 +151,53 @@ def test_delete_removes_logs(tmp_store: Any) -> None:
 def test_invalid_log_name_rejected(tmp_store: Any, bad_name: str) -> None:
     with pytest.raises(ValueError):
         store.event_log_path("abc12345678", bad_name)
+
+
+# === Projects-directory configuration ===================================
+
+def test_set_projects_dir_persists_and_switches(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(store, "_STORE_DIR", tmp_path / "old")
+    monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
+    new = tmp_path / "new_projects"
+    returned = store.set_projects_dir(new)
+    assert returned == new
+    assert store.get_projects_dir() == new
+    # persisted so a fresh load picks it up
+    assert store._load_store_dir() == new
+
+
+def test_set_projects_dir_moves_existing(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    old = tmp_path / "old"
+    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
+    store.save_project(_project("vid00000001"))
+    store.append_event("vid00000001", "edits", {"op": "add"})
+    (store.stages_dir("vid00000001")).mkdir(parents=True, exist_ok=True)
+    (store.stages_dir("vid00000001") / "drums.wav").write_bytes(b"x")
+
+    new = tmp_path / "moved"
+    store.set_projects_dir(new, move_existing=True)
+
+    # Everything followed to the new dir; the old dir is now empty.
+    assert (new / "vid00000001.json").exists()
+    assert (new / "vid00000001.edits.jsonl").exists()
+    assert (new / "vid00000001.stages" / "drums.wav").exists()
+    assert store.load_project("vid00000001") is not None  # readable from new dir
+    assert list(old.iterdir()) == []
+
+
+def test_set_projects_dir_refuses_absolute_and_collision(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    old = tmp_path / "old"
+    monkeypatch.setattr(store, "_STORE_DIR", old)
+    monkeypatch.setattr(store, "_CONFIG_PATH", tmp_path / "config.json")
+    with pytest.raises(ValueError):
+        store.set_projects_dir("relative/path")
+
+    store.save_project(_project("vid00000001"))
+    new = tmp_path / "moved"
+    new.mkdir()
+    (new / "vid00000001.json").write_text("{}")  # pre-existing collision
+    with pytest.raises(FileExistsError):
+        store.set_projects_dir(new, move_existing=True)
+    # Failed move must not have switched the active dir.
+    assert store.get_projects_dir() == old

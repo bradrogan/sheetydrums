@@ -11,6 +11,8 @@ via `store.py`, keyed by video id. Endpoints:
   POST   /projects/{id}/retune  {params}   → re-run with new params, stream a preview (job)
   PUT    /projects/{id}          {notation,params?} → save edited/accepted notation
   DELETE /projects/{id}                    → remove
+  GET    /settings                         → projects-dir settings
+  PUT    /settings   {projects_dir, move_existing?} → change projects dir (opt. move files)
 
 Single-user local-dev server. Job state lives in process memory; projects live
 on disk. The pipeline is blocking PyTorch code, so each job runs on a dedicated
@@ -308,6 +310,41 @@ def _terminal_event(job: JobState) -> str:
     if job.error is not None:
         return f"event: failure\ndata: {json.dumps({'error': job.error})}\n\n"
     return f"event: result\ndata: {json.dumps(job.result)}\n\n"
+
+
+# === Settings (projects directory) ===
+
+
+def _settings_payload() -> dict[str, Any]:
+    return {
+        "projects_dir": str(store.get_projects_dir()),
+        "default_projects_dir": str(store.default_projects_dir()),
+        "project_count": len(store.list_projects()),
+    }
+
+
+@app.get("/settings")
+async def get_settings() -> dict[str, Any]:
+    return _settings_payload()
+
+
+class UpdateSettings(BaseModel):
+    projects_dir: str
+    move_existing: bool = False
+
+
+@app.put("/settings")
+async def update_settings(req: UpdateSettings = Body(...)) -> dict[str, Any]:
+    """Change where projects are stored. With `move_existing`, existing project
+    files are moved into the new directory first."""
+    path = req.projects_dir.strip()
+    if not path:
+        raise HTTPException(400, "Provide a `projects_dir`.")
+    try:
+        store.set_projects_dir(path, move_existing=req.move_existing)
+    except (ValueError, FileExistsError, OSError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _settings_payload()
 
 
 # === Project CRUD ===

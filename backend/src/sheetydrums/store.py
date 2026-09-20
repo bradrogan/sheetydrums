@@ -2,14 +2,21 @@
 
 A *project* wraps a YouTube source with its drum transcription (`notation`),
 keyed by video id. Single-user local-dev persistence: one JSON file per project
-under `~/.cache/sheetydrums/projects/<video_id>.json`. The notation payload is
-the events.json contract verbatim and is validated on write via the same
+under the projects directory (default `~/.cache/sheetydrums/projects/`, but
+user-configurable — see `set_projects_dir`). The notation payload is the
+events.json contract verbatim and is validated on write via the same
 `validate()` the pipeline uses.
+
+The projects directory is configurable and persisted in a small config file
+(`~/.cache/sheetydrums/config.json`, which lives *outside* the projects dir so
+it survives moving them). Changing it can optionally move existing project files
+to the new location.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,11 +24,83 @@ from typing import Any
 
 from sheetydrums.validate import validate
 
-_STORE_DIR: Path = Path.home() / ".cache" / "sheetydrums" / "projects"
+_DEFAULT_STORE_DIR: Path = Path.home() / ".cache" / "sheetydrums" / "projects"
+# Config lives outside the projects dir so the pointer survives moving projects.
+_CONFIG_PATH: Path = Path.home() / ".cache" / "sheetydrums" / "config.json"
+
+
+def _load_store_dir() -> Path:
+    """Read the configured projects dir, falling back to the default."""
+    try:
+        cfg = json.loads(_CONFIG_PATH.read_text())
+        d = cfg.get("projects_dir")
+        if d:
+            return Path(d)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return _DEFAULT_STORE_DIR
+
+
+_STORE_DIR: Path = _load_store_dir()
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# === Projects-directory configuration ===================================
+
+
+def default_projects_dir() -> Path:
+    return _DEFAULT_STORE_DIR
+
+
+def get_projects_dir() -> Path:
+    return _STORE_DIR
+
+
+def set_projects_dir(new_dir: Path | str, move_existing: bool = False) -> Path:
+    """Point the store at `new_dir` and persist the choice. When `move_existing`,
+    move every entry from the current projects dir into the new one first.
+
+    Raises ValueError for a non-absolute path or a path that exists as a file,
+    and FileExistsError if a moved entry would clobber something already in the
+    target (we never silently overwrite the user's data).
+    """
+    global _STORE_DIR
+    target = Path(new_dir).expanduser()
+    if not target.is_absolute():
+        raise ValueError("Projects directory must be an absolute path.")
+    if target.exists() and not target.is_dir():
+        raise ValueError(f"{target} exists and is not a directory.")
+
+    old = _STORE_DIR
+    if target == old:
+        _persist_store_dir(target)  # still record it (first-time explicit set)
+        return target
+
+    target.mkdir(parents=True, exist_ok=True)
+    if move_existing and old.exists():
+        for entry in sorted(old.iterdir()):
+            dest = target / entry.name
+            if dest.exists():
+                raise FileExistsError(f"{dest} already exists — refusing to overwrite.")
+        for entry in sorted(old.iterdir()):
+            shutil.move(str(entry), str(target / entry.name))
+
+    _persist_store_dir(target)
+    _STORE_DIR = target
+    return target
+
+
+def _persist_store_dir(dir_: Path) -> None:
+    existing: dict[str, Any] = {}
+    try:
+        existing = json.loads(_CONFIG_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        pass
+    existing["projects_dir"] = str(dir_)
+    _atomic_write_text(_CONFIG_PATH, json.dumps(existing, indent=2) + "\n")
 
 
 def _check_video_id(video_id: str) -> None:

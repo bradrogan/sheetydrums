@@ -119,6 +119,29 @@ export async function deleteProject(videoId: string): Promise<void> {
   await ok(await fetch(`/projects/${encodeURIComponent(videoId)}`, { method: 'DELETE' }));
 }
 
+// === Settings: where projects are stored ===
+export interface Settings {
+  projects_dir: string;
+  default_projects_dir: string;
+  project_count: number;
+}
+
+export async function getSettings(): Promise<Settings> {
+  const resp = await ok(await fetch('/settings'));
+  return (await resp.json()) as Settings;
+}
+
+export async function updateSettings(projectsDir: string, moveExisting: boolean): Promise<Settings> {
+  const resp = await ok(
+    await fetch('/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projects_dir: projectsDir, move_existing: moveExisting }),
+    }),
+  );
+  return (await resp.json()) as Settings;
+}
+
 // POST /transcribe returns either an already-stored project or a started job.
 export type TranscribeResponse =
   | { status: 'exists'; project: Project }
