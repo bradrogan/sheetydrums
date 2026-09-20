@@ -5,6 +5,7 @@ Async handlers are called directly (as in test_settings.py) — no TestClient.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import pytest
@@ -193,3 +194,125 @@ def test_diagnose_reflects_user_edit(tmp_store: Any) -> None:
     _run(server.create_selection(VID, _body(lane="hihat", bar_start=1, bar_end=2, notes=[], ops=[])))
     after = _run(server.diagnose_project(VID))
     assert after["hats"]["closed"] == 0 and after["n_notes"] == 1  # only the kick survives
+
+
+# === composition is validated on the WRITE path =========================
+# A frozen note can be legal on its own and illegal once composed. Before these
+# checks, such a selection was accepted with a 200 and then 500'd every read of
+# the project, with only DELETE /selections/{sid} — an endpoint the client can't
+# discover, because listing the selections is itself a read — as recovery.
+
+def _bad_sustain_note() -> dict[str, Any]:
+    """sustain_until at/behind position: passes the selection schema (which only
+    pattern-checks it) but is illegal in a composed notation."""
+    return {"bar": 1, "note": {"instrument": "hihat_open", "position": "1/2",
+                               "duration": "1/8", "sustain_until": "1/4"}}
+
+
+def test_create_backwards_sustain_422(tmp_store: Any) -> None:
+    with pytest.raises(HTTPException) as ei:
+        _run(server.create_selection(VID, _body(
+            lane="hihat", bar_start=1, bar_end=1, notes=[_bad_sustain_note()], ops=[])))
+    assert ei.value.status_code == 422
+    assert "sustain_until" in str(ei.value.detail)
+    # Nothing was persisted, so the project still reads.
+    assert _run(server.get_layers(VID))["selections"] == []
+    assert _run(server.get_project(VID))["notation"]
+
+
+def test_update_to_backwards_sustain_422_and_leaves_stored_selection_intact(tmp_store: Any) -> None:
+    sel = _run(server.create_selection(VID, _body(lane="hihat", bar_start=1, bar_end=1, notes=[], ops=[])))
+    with pytest.raises(HTTPException) as ei:
+        _run(server.update_selection(VID, sel["selection_id"], _body(
+            lane="hihat", bar_start=1, bar_end=1, notes=[_bad_sustain_note()], ops=[])))
+    assert ei.value.status_code == 422
+    stored = _run(server.get_layers(VID))["selections"]
+    assert len(stored) == 1 and stored[0]["notes"] == []
+
+
+def test_uncomposable_stored_selection_409s_and_stays_deletable(tmp_store: Any) -> None:
+    """A record written around the endpoints (by hand, or by an older build) must
+    degrade to a 409 that names the fix, not an unhandled 500 — and deleting it
+    must work even though the layer doesn't compose."""
+    project = store.load_project(VID)
+    assert project is not None
+    project["selections"] = [{
+        "selection_id": "sel_bad", "origin": "user", "lane": "hihat",
+        "bar_start": 1, "bar_end": 1, "notes": [_bad_sustain_note()], "ops": [],
+        "verified": True,
+    }]
+    # Straight to disk: save_project would (correctly) reject this.
+    store._atomic_write_text(store._path_for(VID), json.dumps(project))
+
+    for coro in (server.get_project(VID), server.get_layers(VID), server.diagnose_project(VID)):
+        with pytest.raises(HTTPException) as ei:
+            _run(coro)
+        assert ei.value.status_code == 409
+        assert "selections/{sid}" in str(ei.value.detail)
+
+    assert _run(server.delete_selection(VID, "sel_bad")) == {"deleted": "sel_bad"}
+    assert _run(server.get_project(VID))["notation"]  # readable again
+
+
+# === PUT /projects/{id} flatten guard ===================================
+
+def test_put_effective_notation_over_layers_409(tmp_store: Any) -> None:
+    _run(server.create_selection(VID, _body(lane="hihat", bar_start=1, bar_end=1, notes=[], ops=[])))
+    effective = _run(server.get_project(VID))["notation"]
+    with pytest.raises(HTTPException) as ei:
+        _run(server.save_project(VID, {"notation": effective}))
+    assert ei.value.status_code == 409
+    # The base is untouched — its hi-hats are still there.
+    b1 = next(b for b in _run(server.get_layers(VID))["base"]["bars"] if b["index"] == 1)
+    assert [n for n in b1["notes"] if n["instrument"].startswith("hihat")]
+
+
+def test_put_with_base_layer_flag_replaces_base_and_keeps_selections(tmp_store: Any) -> None:
+    sel = _run(server.create_selection(VID, _body(lane="hihat", bar_start=1, bar_end=1, notes=[], ops=[])))
+    fresh = {**_NOTATION, "tempo_bpm": 128.0}
+    saved = _run(server.save_project(VID, {"notation": fresh, "layer": "base"}))
+    assert saved["notation"]["tempo_bpm"] == 128.0
+    assert [s["selection_id"] for s in saved["selections"]] == [sel["selection_id"]]
+
+
+def test_put_without_layers_needs_no_flag(tmp_store: Any) -> None:
+    """Unlayered projects are every project today; the guard must not touch them."""
+    saved = _run(server.save_project(VID, {"notation": {**_NOTATION, "tempo_bpm": 90.0}}))
+    assert saved["notation"]["tempo_bpm"] == 90.0
+
+
+# === wire-level shapes ==================================================
+
+def test_origin_map_is_keyed_by_bar_index_string_over_the_wire(tmp_store: Any) -> None:
+    """`compose` returns dict[int, ...]; JSON has no integer keys, so the response
+    renderer's json.dumps turns them into strings (jsonable_encoder alone does
+    not — the conversion is in the dump). Pin the form a client actually
+    receives: every other test here asserts on the pre-serialization dict."""
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import JSONResponse
+
+    _run(server.create_selection(VID, _body(
+        lane="hihat", bar_start=1, bar_end=1, notes=[_open_hat_at_0()], ops=[])))
+    payload = _run(server.get_layers(VID))
+    body = JSONResponse(content=jsonable_encoder(payload)).body
+    wire = json.loads(bytes(body))
+    assert sorted(wire["origin_map"]) == ["1", "2"]
+    effective_bar1 = next(b for b in wire["effective"]["bars"] if b["index"] == 1)
+    # Parallel to the bar's notes, in emitted order.
+    assert len(wire["origin_map"]["1"]) == len(effective_bar1["notes"])
+    assert "user" in wire["origin_map"]["1"]
+
+
+# === system layer: no-op revert ==========================================
+
+def test_clear_system_layer_404_when_absent(tmp_store: Any) -> None:
+    """A revert with nothing to revert must not rewrite the project: save_project
+    refreshes updated_at, which is the key list_projects sorts on, so a no-op
+    would reorder the gallery."""
+    before = store.load_project(VID)
+    assert before is not None
+    with pytest.raises(HTTPException) as ei:
+        _run(server.clear_system_layer(VID))
+    assert ei.value.status_code == 404
+    after = store.load_project(VID)
+    assert after is not None and after["updated_at"] == before["updated_at"]

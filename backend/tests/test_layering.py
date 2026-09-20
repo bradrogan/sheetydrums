@@ -386,3 +386,44 @@ def test_fingerprint_catches_tuplet_regrouping() -> None:
     hat["tuplet"] = {"actual": 3, "normal": 2, "group": "t1"}
     assert anchor.region_fingerprint(plain, "hihat", 1, 1) != \
         anchor.region_fingerprint(tupleted, "hihat", 1, 1)
+
+
+# === read-path cost ======================================================
+
+def test_compose_skips_revalidation_when_nothing_is_layered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no layers the effective notation is the base re-sorted, and the store
+    already validated that base on write. The jsonschema pass is ~31 ms of a
+    ~36 ms compose on a 150-bar song and `compose` now runs on every project
+    read, so it must not run when there is nothing to check."""
+    calls: list[dict[str, Any]] = []
+
+    def _spy(events: dict[str, Any]) -> None:
+        calls.append(events)
+
+    monkeypatch.setattr(layering, "validate", _spy)
+
+    layering.compose(_base(), None, [])
+    layering.compose(_base(), None, None)
+    layering.compose(_base(), {"pass_id": "p1", "ops": []}, [])  # empty pass: nothing applied
+    assert calls == []
+
+    # ...but a real layer is still validated.
+    layering.compose(_base(), {"pass_id": "p1", "ops": [
+        {"kind": "delete", "bar": 1, "position": "0", "instrument": "kick", "origin": "system"},
+    ]}, [])
+    assert len(calls) == 1
+
+
+def test_compose_still_rejects_an_invalid_composition(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The skip must not weaken the guarantee that a layered result is valid: a
+    frozen note with sustain_until at/behind its position still raises."""
+    selection: dict[str, Any] = {
+        "selection_id": "sel_1", "origin": "user", "lane": "hihat",
+        "bar_start": 1, "bar_end": 1, "verified": True, "ops": [],
+        "notes": [{"bar": 1, "note": {"instrument": "hihat_open", "position": "1/2",
+                                      "duration": "1/8", "sustain_until": "1/4"}}],
+    }
+    with pytest.raises(ValueError, match="sustain_until"):
+        layering.compose(_base(), None, [selection])

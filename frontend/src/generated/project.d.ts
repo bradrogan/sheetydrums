@@ -50,6 +50,7 @@ export interface DrumProjectV1 {
    * ISO 8601 timestamp of the last save (server-set).
    */
   updated_at?: string;
+  base_notation?: DrumTranscriptionEventsV1Draft1;
   /**
    * Runtime-only flag on GET responses (not persisted): whether the isolated drum-stem WAV exists for drums-only playback.
    */
@@ -509,4 +510,31 @@ export interface SystemLayerTuningPhase2ContainerFilledByPhase3 {
         origin?: "user" | "system";
       }
   )[];
+}
+/**
+ * Runtime-only field on GET responses (not persisted): the raw BASE notation, i.e. the generator output before the system and user layers are composed in. `notation` on a GET response is the composed *effective* layer, so this is the only way to see what the pipeline actually produced. PUT /projects/{id} writes this layer, not `notation`.
+ */
+export interface DrumTranscriptionEventsV1Draft1 {
+  version: "1";
+  /**
+   * Path to the drum-stem audio file the frontend should play back, relative to the events.json file.
+   */
+  audio_file?: string;
+  duration_seconds?: number;
+  tempo_bpm: number;
+  time_signature: {
+    numerator: number;
+    denominator: 2 | 4 | 8 | 16;
+  };
+  bars: {
+    /**
+     * 1-based bar number.
+     */
+    index: number;
+    /**
+     * Absolute start time of the bar in the original audio.
+     */
+    start_seconds: number;
+    notes: Note[];
+  }[];
 }

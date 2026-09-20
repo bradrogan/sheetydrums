@@ -7,10 +7,13 @@ via `store.py`, keyed by video id. Endpoints:
   GET    /jobs/{id}/stream                 → SSE progress, terminal event carries project/preview
   GET    /projects                         → list summaries
   GET    /projects/{id}                    → full project (notation = composed effective layer)
-  GET    /projects/{id}/layers             → {base, system_layer, selections, effective, origin_map}
+  GET    /projects/{id}/layers             → {base, system_layer, selections, effective,
+                                              origin_map} (origin_map keyed by bar-index string)
   GET    /projects/{id}/diagnose           → diagnostics on the effective notation
   POST   /projects/{id}/retune  {params}   → re-run with new params, stream a preview (job)
-  PUT    /projects/{id}          {notation,params?} → save BASE notation (retune-accept path)
+  PUT    /projects/{id}          {notation,params?,layer?} → save BASE notation
+                                              (retune-accept path; needs layer="base" once
+                                              the project has layers — see the handler)
   POST   /projects/{id}/selections {lane,bar_start,bar_end,notes,ops} → create a verified selection
   PUT    /projects/{id}/selections/{sid}   → edit a verified selection
   DELETE /projects/{id}/selections/{sid}   → undo a verified selection
@@ -79,6 +82,23 @@ _MAX_JOBS: int = 32
 # migration holds the lock and the job waits for it. Job registration holds the
 # lock only briefly, so there is no meaningful contention.
 _migration_lock: asyncio.Lock = asyncio.Lock()
+
+# Guards one project's load → modify → save window, as used by the /selections
+# and /system endpoints. Those handlers have no `await` between the load and the
+# save today, so the event loop cannot interleave two of them and this lock is
+# currently uncontended — it is here so that introducing an await (or moving the
+# disk write to `asyncio.to_thread`) inside one of those windows cannot silently
+# turn a read-modify-write into a lost update. A threading lock rather than an
+# asyncio one because the job worker threads also write projects through
+# `store`. One lock per video id touched in this process: a handful per session,
+# and each is a few dozen bytes, so they are not pruned.
+_project_locks: dict[str, threading.Lock] = {}
+_project_locks_guard: threading.Lock = threading.Lock()
+
+
+def _project_lock(video_id: str) -> threading.Lock:
+    with _project_locks_guard:
+        return _project_locks.setdefault(video_id, threading.Lock())
 
 
 app: FastAPI = FastAPI(title="sheetydrums")
@@ -401,6 +421,35 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _compose_or_409(project: dict[str, Any]) -> tuple[dict[str, Any], dict[int, list[str]]]:
+    """Compose a project's layers for a read, turning a composition failure into
+    a 409 instead of an unhandled 500.
+
+    `compose` validates the notation it builds, so a stored layer that composes
+    to something invalid takes out *every* read path for the project at once —
+    and the only recovery (DELETE a selection or the system layer) is then an
+    endpoint the client cannot discover, because listing the layers is itself a
+    read. The write paths reject such a layer up front (`_save_selections_or_422`),
+    so this is the backstop for a record that predates that check or was written
+    by hand; it says which endpoint clears it.
+    """
+    try:
+        return compose(
+            project.get("notation") or {},
+            project.get("system_layer"),
+            project.get("selections") or [],
+        )
+    except (jsonschema.ValidationError, ValueError) as exc:
+        video_id = project.get("video_id")
+        raise HTTPException(
+            409,
+            f"Project {video_id!r} has a layer that composes to an invalid "
+            f"notation: {exc} Remove the offending selection "
+            f"(DELETE /projects/{video_id}/selections/{{sid}}) or the system "
+            f"layer (DELETE /projects/{video_id}/system).",
+        ) from exc
+
+
 @app.get("/projects")
 async def list_projects() -> dict[str, Any]:
     return {"projects": store.list_projects()}
@@ -413,9 +462,7 @@ async def get_project(video_id: str) -> dict[str, Any]:
     # (base + system + verified selections); the raw generator output stays
     # available as `base_notation` for the retune-accept path. For a legacy
     # project (no layers) effective == base, so this is behaviour-neutral.
-    effective, _ = compose(
-        project.get("notation") or {}, project.get("system_layer"), project.get("selections") or []
-    )
+    effective, _ = _compose_or_409(project)
     return {
         **project,
         "notation": effective,
@@ -435,9 +482,7 @@ async def diagnose_project(video_id: str) -> dict[str, Any]:
     from sheetydrums.diagnostics import diagnose
 
     project = _load_or_404(video_id)
-    effective, _ = compose(
-        project.get("notation") or {}, project.get("system_layer"), project.get("selections") or []
-    )
+    effective, _ = _compose_or_409(project)
     return diagnose(effective)
 
 
@@ -463,11 +508,16 @@ async def get_drumless(video_id: str) -> FileResponse:
 async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """Save BASE notation for an existing project — the retune-accept path.
 
-    Body: {"notation": <events>}. This replaces the base layer (the generator
-    output); user corrections live in the user layer via the /selections
-    endpoints and are preserved here untouched. Do NOT PUT the composed
-    `effective` notation back — that would flatten the layers. Validates before
-    persisting; preserves the project's source + created_at + selections.
+    Body: {"notation": <events>, "params"?: {...}, "layer"?: "base"}. This
+    replaces the base layer (the generator output); user corrections live in the
+    user layer via the /selections endpoints and are preserved here untouched.
+    Validates before persisting; preserves the project's source + created_at +
+    selections.
+
+    `notation` on a GET response is the *composed effective* layer, so PUTting
+    that back would flatten the layers into the base. Once a project has any
+    layer this endpoint therefore requires an explicit `"layer": "base"` to
+    confirm the body really is fresh generator output. See the 409 below.
     """
     existing = store.load_project(video_id)
     if existing is None:
@@ -475,6 +525,27 @@ async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[
     notation = body.get("notation")
     if notation is None:
         raise HTTPException(400, "Body must contain `notation`.")
+    # Flatten guard. A client that GETs a project and PUTs its `notation` back is
+    # writing the composed layers into the base, and every part of that is lossy
+    # and silent: the raw generator output is gone, each selection's
+    # base_fingerprint stops matching so `anchor.region_status` reports `drifted`
+    # forever, and a system pass baked into the base can no longer be reverted by
+    # DELETE /system (its ops are then dropped as "already sounds here"). The
+    # closed-world overwrite re-applies cleanly on top, so nothing *looks* wrong
+    # until a re-generation. Only the retune-accept path has a genuine new base,
+    # so make it say so.
+    if (existing.get("selections") or existing.get("system_layer") is not None) and body.get(
+        "layer"
+    ) != "base":
+        raise HTTPException(
+            409,
+            f"Project {video_id!r} has user/system layers. `notation` on a GET "
+            "response is the COMPOSED effective layer; PUTting it back would "
+            "flatten those layers into the base irrecoverably. Edit through "
+            f"POST/PUT /projects/{video_id}/selections instead, or pass "
+            '{"layer": "base"} to confirm this body is fresh generator output '
+            "(the retune-accept path).",
+        )
     to_save: dict[str, Any] = {**existing, "notation": notation}
     # Accepting a re-tune preview also persists the params that produced it.
     if body.get("params") is not None:
@@ -526,11 +597,15 @@ async def delete_project(video_id: str) -> dict[str, Any]:
 async def get_layers(video_id: str) -> dict[str, Any]:
     """The full layered view: raw base, the system pass, the user's verified
     selections, and the composed effective notation with a per-note origin map
-    (base | system | user) so the client can colour the delta."""
+    (base | system | user) so the client can colour the delta.
+
+    `origin_map` is an object keyed by **bar index as a string** — JSON has no
+    integer keys, so the `dict[int, ...]` `compose` returns is stringified on the
+    way out (`{"1": ["base", "user"], ...}`). Its list for a bar is parallel to
+    that bar's `notes` in `effective`, in emitted order.
+    """
     project = _load_or_404(video_id)
-    effective, origin_map = compose(
-        project.get("notation") or {}, project.get("system_layer"), project.get("selections") or []
-    )
+    effective, origin_map = _compose_or_409(project)
     return {
         "base": project.get("notation"),
         "system_layer": project.get("system_layer"),
@@ -580,9 +655,32 @@ def _build_selection(
     }
 
 
-def _save_selections_or_422(video_id: str, selections: list[dict[str, Any]]) -> None:
+def _save_selections_or_422(
+    project: dict[str, Any],
+    selections: list[dict[str, Any]],
+    *,
+    check_composition: bool = True,
+) -> None:
+    """Persist a project's user layer, rejecting anything that fails validation
+    *or composition*.
+
+    Composing before the write is what keeps a schema-valid selection from
+    bricking the read path. `store.save_selections` validates the base notation
+    and each selection record in isolation; it never merges them. A frozen note
+    can be individually legal and illegal once composed — a `sustain_until` at or
+    before its `position` is the concrete case — and `compose` is what catches
+    that, on every subsequent GET. Doing it here means the request that
+    introduces the bad layer is the request that fails.
+
+    `check_composition=False` is for the *removal* path. Deleting a selection can
+    only shrink what gets layered, so gating it on a clean compose would be
+    backwards: with two bad records, neither could ever be deleted, and deletion
+    is exactly the recovery `_compose_or_409` tells the client to use.
+    """
     try:
-        store.save_selections(video_id, selections)
+        if check_composition:
+            compose(project.get("notation") or {}, project.get("system_layer"), selections)
+        store.save_selections(project["video_id"], selections)
     except (jsonschema.ValidationError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -592,11 +690,12 @@ async def create_selection(video_id: str, body: SelectionBody = Body(...)) -> di
     """Create a verified selection (the user layer). The server stamps the id,
     origin, verified flag, created_at, and base_fingerprint; the whole user layer
     is then re-validated (schema + field + no-lane-overlap invariants) on save."""
-    project = _load_or_404(video_id)
-    base = project.get("notation") or {}
-    _validate_region_in_base(base, body.bar_start, body.bar_end)
-    sel = _build_selection("sel_" + uuid.uuid4().hex, body, base, _now_iso())
-    _save_selections_or_422(video_id, [*(project.get("selections") or []), sel])
+    with _project_lock(video_id):
+        project = _load_or_404(video_id)
+        base = project.get("notation") or {}
+        _validate_region_in_base(base, body.bar_start, body.bar_end)
+        sel = _build_selection("sel_" + uuid.uuid4().hex, body, base, _now_iso())
+        _save_selections_or_422(project, [*(project.get("selections") or []), sel])
     return sel
 
 
@@ -607,40 +706,53 @@ async def update_selection(
     """Edit a verified selection (adjust its region / notes / re-verify).
     base_fingerprint is recomputed against the current base for the (possibly
     new) region; created_at is preserved."""
-    project = _load_or_404(video_id)
-    selections = project.get("selections") or []
-    idx = next((i for i, s in enumerate(selections) if s["selection_id"] == sid), None)
-    if idx is None:
-        raise HTTPException(404, f"No selection {sid!r}")
-    base = project.get("notation") or {}
-    _validate_region_in_base(base, body.bar_start, body.bar_end)
-    updated = _build_selection(sid, body, base, selections[idx].get("created_at") or _now_iso())
-    _save_selections_or_422(video_id, [*selections[:idx], updated, *selections[idx + 1 :]])
+    with _project_lock(video_id):
+        project = _load_or_404(video_id)
+        selections = project.get("selections") or []
+        idx = next((i for i, s in enumerate(selections) if s["selection_id"] == sid), None)
+        if idx is None:
+            raise HTTPException(404, f"No selection {sid!r}")
+        base = project.get("notation") or {}
+        _validate_region_in_base(base, body.bar_start, body.bar_end)
+        updated = _build_selection(sid, body, base, selections[idx].get("created_at") or _now_iso())
+        _save_selections_or_422(project, [*selections[:idx], updated, *selections[idx + 1 :]])
     return updated
 
 
 @app.delete("/projects/{video_id}/selections/{sid}")
 async def delete_selection(video_id: str, sid: str) -> dict[str, Any]:
     """Undo a verified selection as a unit."""
-    project = _load_or_404(video_id)
-    selections = project.get("selections") or []
-    remaining = [s for s in selections if s["selection_id"] != sid]
-    if len(remaining) == len(selections):
-        raise HTTPException(404, f"No selection {sid!r}")
-    _save_selections_or_422(video_id, remaining)
+    with _project_lock(video_id):
+        project = _load_or_404(video_id)
+        selections = project.get("selections") or []
+        remaining = [s for s in selections if s["selection_id"] != sid]
+        if len(remaining) == len(selections):
+            raise HTTPException(404, f"No selection {sid!r}")
+        # No compose check: see `_save_selections_or_422`. Removal must stay
+        # available even when the layer currently composes to nothing valid.
+        _save_selections_or_422(project, remaining, check_composition=False)
     return {"deleted": sid}
 
 
 @app.delete("/projects/{video_id}/system")
 async def clear_system_layer(video_id: str) -> dict[str, Any]:
     """Undo the current 'fix the rest' system pass as a unit. Reverts only the
-    system layer — never a user edit. (Phase 2 has nothing that sets it yet;
-    owning the revert path is Phase 2's obligation.)"""
-    project = _load_or_404(video_id)
-    cleared = (project.get("system_layer") or {}).get("pass_id")
-    project["system_layer"] = None
-    store.save_project(project)
-    return {"cleared": cleared}
+    system layer — never a user edit. 404s when there is no pass to clear, so a
+    no-op revert doesn't rewrite the project: `store.save_project` refreshes
+    `updated_at`, which is the key `store.list_projects` sorts on, and a revert
+    that changed nothing should not reorder the gallery. (Phase 2 has nothing
+    that sets the layer yet; owning the revert path is Phase 2's obligation.)"""
+    with _project_lock(video_id):
+        project = _load_or_404(video_id)
+        layer = project.get("system_layer")
+        if layer is None:
+            raise HTTPException(404, f"Project {video_id!r} has no system layer to clear.")
+        project["system_layer"] = None
+        try:
+            store.save_project(project)
+        except (jsonschema.ValidationError, ValueError, OSError) as exc:
+            raise HTTPException(400, f"Could not clear the system layer: {exc}") from exc
+    return {"cleared": layer.get("pass_id")}
 
 
 def main_serve() -> None:

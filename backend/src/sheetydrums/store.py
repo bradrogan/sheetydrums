@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sheetydrums.layering import compose
 from sheetydrums.validate import validate, validate_selections, validate_system_layer
 
 _DEFAULT_STORE_DIR: Path = Path.home() / ".cache" / "sheetydrums" / "projects"
@@ -420,8 +421,29 @@ def list_projects() -> list[dict[str, Any]]:
     return summaries
 
 
-def _summarize(project: dict[str, Any]) -> dict[str, Any]:
+def _effective_notation(project: dict[str, Any]) -> dict[str, Any]:
+    """The notation a summary should describe: the composed effective layer, so a
+    gallery card's bar/note counts match the score `GET /projects/{id}` serves
+    (a selection that deletes notes otherwise leaves the two disagreeing).
+
+    Composes only when there is something to layer, keeping the common unlayered
+    project free, and falls back to the base if composition fails — the listing's
+    contract is that one bad record never breaks the whole gallery.
+    """
     notation: dict[str, Any] = project.get("notation") or {}
+    if not (project.get("selections") or project.get("system_layer")):
+        return notation
+    try:
+        effective, _ = compose(
+            notation, project.get("system_layer"), project.get("selections") or []
+        )
+    except Exception:
+        return notation
+    return effective
+
+
+def _summarize(project: dict[str, Any]) -> dict[str, Any]:
+    notation: dict[str, Any] = _effective_notation(project)
     bars: list[Any] = notation.get("bars") or []
     n_notes: int = sum(len(b.get("notes") or []) for b in bars)
     video_id: str = project["video_id"]
