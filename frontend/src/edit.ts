@@ -95,8 +95,9 @@ export interface EditContext {
   scoreEl: HTMLElement;
   /** Persisted verified selections (the user layer), drawn as bands. */
   selections: api.Selection[];
-  /** Re-fetch + re-render the project (called after a selection is committed). */
-  reload: () => void;
+  /** Re-fetch + re-render the project. Pass {edit:true} to re-enter edit mode
+   * after the rebuild, so a just-verified selection's band stays visible. */
+  reload: (opts?: { edit?: boolean }) => void;
 }
 
 export function setupEditing(ctx: EditContext): void {
@@ -171,7 +172,9 @@ export function setupEditing(ctx: EditContext): void {
     sel.clear();
     hideToolbar();
     editSession.dirty = false;
-    reload(); // re-fetch effective + persisted selections, rebuild the score
+    // Stay in edit mode after committing so the newly-verified band is visible
+    // (view mode is deliberately kept clear of bands).
+    reload({ edit: true });
   };
 
   const enterEditMode = (): void => {

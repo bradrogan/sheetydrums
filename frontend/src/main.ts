@@ -329,7 +329,7 @@ function teardownPlayer(): void {
   activeTransport = null;
 }
 
-async function showProject(videoId: string): Promise<void> {
+async function showProject(videoId: string, opts?: { edit?: boolean }): Promise<void> {
   showOnly(projectSection);
   teardownPlayer();
   byId('meta').textContent = 'Loading…';
@@ -369,10 +369,13 @@ async function showProject(videoId: string): Promise<void> {
     // Persisted verified selections (the user layer) to draw as bands.
     selections: (project.selections ?? []) as unknown as api.Selection[],
     // Committing a selection re-fetches the composed project + rebuilds the score.
-    reload: () => void showProject(videoId),
+    reload: (o) => void showProject(videoId, o),
   });
   await setupPlayback(project, model, sync);
   setupTuningPanel(project, events);
+  // Re-enter edit mode after a rebuild requested it (e.g. just after Verify), so
+  // the persisted selection's band is immediately visible.
+  if (opts?.edit) (byId('edit-toggle') as HTMLButtonElement).click();
 }
 
 // Wire the "Tune" toggle + manual params panel (Phase 1). The panel lives in the
