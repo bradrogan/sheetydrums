@@ -1201,10 +1201,81 @@ button.icon-btn {
   font-size: 1.35rem;
 }
 .settings-modal .settings-path {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   box-sizing: border-box;
   font-family: var(--font-mono);
   font-size: 0.85rem;
+}
+.settings-path-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+.settings-path-row button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* Directory navigator (projects-dir picker). */
+.settings-nav-holder:not(:empty) {
+  margin-top: 0.5rem;
+}
+.fs-nav {
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.fs-nav-path {
+  padding: 0.4rem 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  word-break: break-all;
+  background: #eef4f7;
+  border-bottom: 1.5px solid var(--ink);
+  color: #04121a;
+}
+.fs-nav-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.fs-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #e2e6ea;
+  background: #fff;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  color: #04121a;
+}
+.fs-nav-row:hover {
+  background: rgba(45, 226, 255, 0.14);
+}
+.fs-nav-icon {
+  flex: 0 0 auto;
+}
+.fs-nav-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fs-nav-empty,
+.fs-nav-loading {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.82rem;
+}
+.fs-nav-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0.6rem;
+  border-top: 1.5px solid var(--ink);
+  background: #f6f9fb;
 }
 .settings-hint {
   font-size: 0.8rem;

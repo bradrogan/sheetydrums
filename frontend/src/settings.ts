@@ -1,7 +1,9 @@
 // Settings dialog: choose where projects are stored, with an option to move
 // existing project files to the new folder. The path is a server-side absolute
-// path (the backend is local) — browsers can't hand a real filesystem path from
-// a native picker to the server, so it's a text field.
+// path (the backend is local). A browser's native picker can't hand a real
+// filesystem path to the server, so the path is still a text field — but a
+// "Browse…" button opens a server-driven directory navigator (GET /fs/list) so
+// the user can pick a folder instead of typing one blind.
 import * as api from './api';
 
 /** Open the settings modal. Resolves true if the projects dir was changed. */
@@ -46,11 +48,35 @@ export function openSettings(onChanged: () => void): void {
     input.value = settings.projects_dir;
     input.spellcheck = false;
     input.setAttribute('autocomplete', 'off');
-    box.appendChild(input);
+
+    const browseBtn = button('Browse…', '', () => toggleNav());
+    const pathRow = el('div', 'settings-path-row');
+    pathRow.append(input, browseBtn);
+    box.appendChild(pathRow);
+
+    // The directory navigator mounts here when Browse is toggled on.
+    const navHolder = el('div', 'settings-nav-holder');
+    box.appendChild(navHolder);
 
     const hint = el('p', 'muted settings-hint',
       `Absolute path on this machine. Default: ${settings.default_projects_dir}`);
     box.appendChild(hint);
+
+    function toggleNav(): void {
+      if (navHolder.firstChild) {
+        navHolder.innerHTML = '';
+        browseBtn.textContent = 'Browse…';
+        return;
+      }
+      browseBtn.textContent = 'Hide browser';
+      navHolder.appendChild(
+        makeNavigator(input.value.trim() || settings.projects_dir, (picked) => {
+          input.value = picked;
+          navHolder.innerHTML = '';
+          browseBtn.textContent = 'Browse…';
+        }),
+      );
+    }
 
     const moveLabel = document.createElement('label');
     moveLabel.className = 'settings-move';
@@ -114,6 +140,61 @@ function button(label: string, cls: string, onClick: () => void): HTMLButtonElem
   b.textContent = label;
   if (cls) b.className = cls;
   b.onclick = onClick;
+  return b;
+}
+
+/** A server-driven directory navigator: lists sub-folders of the current path,
+ * lets the user descend / go up, and pick the current folder. */
+function makeNavigator(startPath: string, onPick: (path: string) => void): HTMLElement {
+  const wrap = el('div', 'fs-nav');
+  let current = startPath;
+
+  const render = async (): Promise<void> => {
+    wrap.innerHTML = '';
+    wrap.appendChild(el('p', 'muted fs-nav-loading', 'Loading…'));
+    let listing: api.DirListing;
+    try {
+      listing = await api.listDir(current);
+    } catch (err) {
+      wrap.innerHTML = '';
+      wrap.appendChild(el('p', 'settings-error', errMsg(err)));
+      return;
+    }
+    current = listing.path;
+
+    wrap.innerHTML = '';
+    wrap.appendChild(el('div', 'fs-nav-path', listing.path));
+
+    const list = el('div', 'fs-nav-list');
+    if (listing.parent !== null) {
+      const parent = listing.parent;
+      list.appendChild(navRow('⬆', '.. (up)', () => { current = parent; void render(); }));
+    }
+    for (const entry of listing.entries) {
+      list.appendChild(navRow('📁', entry.name, () => { current = entry.path; void render(); }));
+    }
+    if (listing.entries.length === 0) {
+      list.appendChild(el('p', 'muted fs-nav-empty', '(no sub-folders here)'));
+    }
+    wrap.appendChild(list);
+
+    const foot = el('div', 'fs-nav-foot');
+    const use = button('Use this folder', 'primary', () => onPick(listing.path));
+    if (!listing.writable) {
+      use.disabled = true;
+      use.title = 'This folder is not writable.';
+    }
+    foot.appendChild(use);
+    wrap.appendChild(foot);
+  };
+
+  void render();
+  return wrap;
+}
+
+function navRow(icon: string, label: string, onClick: () => void): HTMLButtonElement {
+  const b = button('', 'fs-nav-row', onClick);
+  b.append(el('span', 'fs-nav-icon', icon), el('span', 'fs-nav-name', label));
   return b;
 }
 

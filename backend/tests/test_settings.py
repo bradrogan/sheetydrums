@@ -142,3 +142,41 @@ def test_cors_origins_are_not_wildcard() -> None:
         for o in origins
     )
     assert "*" not in methods
+
+
+# === Filesystem directory picker (GET /fs/list) ===
+
+def test_fs_list_lists_subdirs_only(tmp_cfg: Any) -> None:
+    (tmp_cfg / "alpha").mkdir()
+    (tmp_cfg / "beta").mkdir()
+    (tmp_cfg / "song.wav").write_text("x")  # files are excluded
+    res = asyncio.run(server.fs_list(str(tmp_cfg)))
+    assert res["path"] == str(tmp_cfg)
+    assert [e["name"] for e in res["entries"]] == ["alpha", "beta"]  # sorted, dirs only
+    assert res["parent"] == str(tmp_cfg.parent)
+    assert res["writable"] is True
+
+
+def test_fs_list_default_resolves_to_projects_dir_ancestor(tmp_cfg: Any) -> None:
+    # store._store_dir = tmp_cfg/"projects" (not created) → walk up to tmp_cfg.
+    res = asyncio.run(server.fs_list(None))
+    assert res["path"] == str(tmp_cfg)
+
+
+def test_fs_list_relative_path_400(tmp_cfg: Any) -> None:
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(server.fs_list("rel/dir"))
+    assert ei.value.status_code == 400
+
+
+def test_fs_list_nonexistent_walks_up_to_existing_ancestor(tmp_cfg: Any) -> None:
+    res = asyncio.run(server.fs_list(str(tmp_cfg / "no" / "such" / "dir")))
+    assert res["path"] == str(tmp_cfg)
+
+
+def test_fs_list_file_path_400(tmp_cfg: Any) -> None:
+    f = tmp_cfg / "file.txt"
+    f.write_text("x")
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(server.fs_list(str(f)))
+    assert ei.value.status_code == 400
