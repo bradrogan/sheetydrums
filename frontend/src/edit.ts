@@ -159,14 +159,14 @@ export function setupEditing(ctx: EditContext): void {
     toolbar.appendChild(mkBtn('Cancel', '', () => { sel.clear(); hideToolbar(); redrawBands(); }));
   };
 
-  const commit = async (): Promise<void> => {
+  const commit = async (): Promise<boolean> => {
     const input = sel.toInput(notation);
     let created: api.Selection;
     try {
       created = await api.createSelection(videoId, input);
     } catch (err) {
       alert(`Couldn't save selection: ${err instanceof Error ? err.message : String(err)}`);
-      return;
+      return false;
     }
     // Update in place — no re-fetch, no re-render, no scroll jump. The score
     // already shows the edited notes (edits mutate `notation`, which the server
@@ -180,6 +180,22 @@ export function setupEditing(ctx: EditContext): void {
     // after this commit, not the committed ones (which are already persisted).
     saved = structuredClone(notation);
     redrawBands();
+    return true;
+  };
+
+  // Begin a fresh draft. Any uncommitted edits in the current draft were never
+  // verified, so revert them to the last-commit/enter baseline before starting a
+  // new one — otherwise they linger in the in-memory notation and get baked into
+  // the next commit's frozen notes (and into the discard baseline).
+  const startDraft = (lane: LaneKey, bar: number): void => {
+    if (sel.hasEdits) {
+      notation.bars = structuredClone(saved).bars;
+      sel.begin(lane, bar);
+      rerenderAll(true);
+    } else {
+      sel.begin(lane, bar);
+      redrawBands();
+    }
   };
 
   const enterEditMode = (): void => {
@@ -210,9 +226,12 @@ export function setupEditing(ctx: EditContext): void {
     if (sel.active && sel.hasEdits) {
       const choice = await confirmLeaveSelection();
       if (choice === 'cancel') return false;
-      if (choice === 'verify') { await commit(); return true; } // commit() reloads the project
-      // discard: revert the in-memory edits to the pre-edit baseline
-      notation.bars = structuredClone(saved).bars;
+      if (choice === 'verify') {
+        if (!(await commit())) return false; // commit failed → stay in edit mode
+      } else {
+        // discard: revert the in-memory edits to the pre-edit baseline
+        notation.bars = structuredClone(saved).bars;
+      }
     }
     exitEditMode();
     return true;
@@ -238,8 +257,7 @@ export function setupEditing(ctx: EditContext): void {
   // drag's start y, the bars from the span the drag covers.
   sync.onLaneDragStart = (barView, y) => {
     closePopover();
-    sel.begin(laneAtY(model, y), barView.index);
-    redrawBands();
+    startDraft(laneAtY(model, y), barView.index);
   };
   sync.onLaneDragTo = (barView) => {
     sel.extendTo(barView.index);
@@ -258,8 +276,7 @@ export function setupEditing(ctx: EditContext): void {
     const inDraft =
       r !== null && r.lane === lane && r.barStart <= barView.index && barView.index <= r.barEnd;
     if (!inDraft) {
-      sel.begin(lane, barView.index);
-      redrawBands();
+      startDraft(lane, barView.index);
       showToolbar();
     }
     const active = sel.region();

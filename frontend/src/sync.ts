@@ -30,9 +30,8 @@ export class SyncController {
 
   /** BarView by bar index, for locating the bar under the cursor mid-drag. */
   private byIndex = new Map<number, BarView>();
-  /** True while a lane-drag is in progress; suppresses the trailing click. */
+  /** True while a lane-drag is in progress. */
   private dragging = false;
-  private suppressClick = false;
 
   constructor(model: RenderModel) {
     // Sorted by start time (bars come in order, but be defensive).
@@ -74,8 +73,20 @@ export class SyncController {
       preventSelection(false);
       if (this.dragging) {
         this.dragging = false;
-        this.suppressClick = true; // eat the click that follows this mouseup
         this.onLaneDragEnd();
+        // Swallow the click this drag will synthesize, wherever it lands: a
+        // cross-bar drag's click targets the shared container (not a bar's
+        // svgHost), so a per-bar flag would never clear. Capture it once at the
+        // document, then self-remove; the fallback timeout covers the case where
+        // no click fires at all (drag released off-window).
+        const swallow = (ce: MouseEvent): void => {
+          ce.stopPropagation();
+          ce.preventDefault();
+          cleanup();
+        };
+        const cleanup = (): void => document.removeEventListener('click', swallow, true);
+        document.addEventListener('click', swallow, true);
+        setTimeout(cleanup, 0);
       }
     };
     document.addEventListener('mousemove', onMove, true);
@@ -161,12 +172,6 @@ export class SyncController {
   }
 
   private handleClick(bar: BarView, e: MouseEvent): void {
-    // A click synthesized at the end of a lane-drag is swallowed here so the
-    // drag doesn't also open the column editor / seek.
-    if (this.suppressClick) {
-      this.suppressClick = false;
-      return;
-    }
     // Convert the click from rendered pixels back into viewBox (800×140) units,
     // accounting for however much the SVG is scaled to fit its column.
     const rect = bar.svgHost.getBoundingClientRect();
