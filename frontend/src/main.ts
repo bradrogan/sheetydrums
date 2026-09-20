@@ -4,6 +4,7 @@ import { createAudioPlayer } from './audioPlayer';
 import { SyncController } from './sync';
 import { setupEditing, editSession } from './edit';
 import { setupTuning } from './tuning';
+import { openSettings } from './settings';
 import { injectPoo } from './poo';
 import * as api from './api';
 import type { Notation, Project, ProjectSummary } from './api';
@@ -22,6 +23,7 @@ const urlForm = byId('url-form') as HTMLFormElement;
 const projectGrid = byId('project-grid');
 const emptyProjects = byId('empty-projects');
 const cancelBtn = byId('cancel-btn');
+const settingsBtn = byId('settings-btn');
 const backBtn = byId('back-btn');
 const pdfBtn = byId('pdf-btn');
 
@@ -577,6 +579,9 @@ async function setupPlayback(
 
 backBtn.addEventListener('click', () => navigate('#/'));
 pdfBtn.addEventListener('click', () => window.print());
+// Settings: change the projects directory (optionally moving existing files),
+// then refresh the list to reflect the new store.
+settingsBtn.addEventListener('click', () => openSettings(() => void showList()));
 
 // === Helpers ===
 

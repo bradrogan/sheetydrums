@@ -2,14 +2,22 @@
 
 A *project* wraps a YouTube source with its drum transcription (`notation`),
 keyed by video id. Single-user local-dev persistence: one JSON file per project
-under `~/.cache/sheetydrums/projects/<video_id>.json`. The notation payload is
-the events.json contract verbatim and is validated on write via the same
+under the projects directory (default `~/.cache/sheetydrums/projects/`, but
+user-configurable — see `set_projects_dir`). The notation payload is the
+events.json contract verbatim and is validated on write via the same
 `validate()` the pipeline uses.
+
+The projects directory is configurable and persisted in a small config file
+(`~/.cache/sheetydrums/config.json`, which lives *outside* the projects dir so
+it survives moving them). Changing it can optionally move existing project files
+to the new location — only the entries this store created, since a user-chosen
+directory may hold unrelated files.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,17 +25,179 @@ from typing import Any
 
 from sheetydrums.validate import validate, validate_selections, validate_system_layer
 
-_STORE_DIR: Path = Path.home() / ".cache" / "sheetydrums" / "projects"
+_DEFAULT_STORE_DIR: Path = Path.home() / ".cache" / "sheetydrums" / "projects"
+# Config lives outside the projects dir so the pointer survives moving projects.
+_CONFIG_PATH: Path = Path.home() / ".cache" / "sheetydrums" / "config.json"
+
+
+def _load_store_dir() -> Path:
+    """Read the configured projects dir, falling back to the default."""
+    try:
+        cfg = json.loads(_CONFIG_PATH.read_text())
+        d = cfg.get("projects_dir")
+        if d:
+            return Path(d)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return _DEFAULT_STORE_DIR
+
+
+_STORE_DIR: Path = _load_store_dir()
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# === Projects-directory configuration ===================================
+
+
+def default_projects_dir() -> Path:
+    return _DEFAULT_STORE_DIR
+
+
+def get_projects_dir() -> Path:
+    return _STORE_DIR
+
+
+def set_projects_dir(new_dir: Path | str, move_existing: bool = False) -> Path:
+    """Point the store at `new_dir` and persist the choice. When `move_existing`,
+    first move this store's own entries from the current projects dir into the
+    new one — unrelated files in a user-chosen directory are left alone.
+
+    Raises ValueError for a non-absolute path, a path that exists as a file, or
+    a path nested with the current one; FileExistsError if a moved entry would
+    clobber something already in the target (we never silently overwrite the
+    user's data). A move that fails partway is rolled back, so projects are
+    never left split across two directories.
+    """
+    global _STORE_DIR
+    target = Path(new_dir).expanduser()
+    if not target.is_absolute():
+        raise ValueError("Projects directory must be an absolute path.")
+    if target.exists() and not target.is_dir():
+        raise ValueError(f"{target} exists and is not a directory.")
+
+    old = _STORE_DIR
+    if target == old:
+        _persist_store_dir(target)  # still record it (first-time explicit set)
+        return target
+
+    # Moving between nested directories is ill-defined (a parent into its own
+    # child, or projects hoisted on top of the dir they came from), so refuse
+    # rather than discover it halfway through the move.
+    if _nested(target, old):
+        raise ValueError(
+            f"{target} is nested with the current projects directory ({old}) — "
+            "choose a directory outside it."
+        )
+
+    target.mkdir(parents=True, exist_ok=True)
+    if move_existing:
+        _move_projects(old, target)
+    # Switch in memory before persisting: once the files have moved, the running
+    # process must follow them even if writing the config file fails.
+    _STORE_DIR = target
+    try:
+        _persist_store_dir(target)
+    except OSError as exc:
+        # The move already happened, so this is not a clean failure: the config
+        # still names `old`, and after a restart `_load_store_dir()` would send
+        # the app to a directory the projects have left — they'd look lost. Say
+        # where they are instead of surfacing a bare errno.
+        raise OSError(
+            f"Projects were moved to {target}, but the new location could not be "
+            f"saved to {_CONFIG_PATH} ({exc}). This session is using {target}; "
+            "set the directory again to make it survive a restart."
+        ) from exc
+    return target
+
+
+def _nested(a: Path, b: Path) -> bool:
+    """True if either path sits inside the other. Compared resolved, so a
+    symlinked parent can't sneak a nested pair past the check; neither path
+    needs to exist."""
+    ra, rb = a.resolve(), b.resolve()
+    return ra.is_relative_to(rb) or rb.is_relative_to(ra)
+
+
+def _known_video_ids(dir_: Path) -> set[str]:
+    """Video ids of the projects stored in `dir_`. A `.json` that doesn't parse
+    as a project (the user's own file, our own `config.json`) is not one."""
+    return {
+        path.stem for path in dir_.glob("*.json") if _read_project(path) is not None
+    }
+
+
+def _owned_entries(dir_: Path) -> list[Path]:
+    """Entries in `dir_` that this store created — a project's JSON plus every
+    `<video_id>.*` sibling (logs, stems, stage cache). The projects dir is
+    user-chosen and may hold anything, so this is the only set a move touches.
+    """
+    if not dir_.exists():
+        return []
+    ids = _known_video_ids(dir_)
+    # A video id never contains a dot, so the leading segment is the key.
+    return sorted(p for p in dir_.iterdir() if p.name.split(".", 1)[0] in ids)
+
+
+def _move_projects(old: Path, target: Path) -> None:
+    """Move this store's entries from `old` into `target`, all or nothing.
+
+    Nothing moves unless every destination is free, and a failure partway is
+    rolled back (best effort) so a half-move can't strand projects in a
+    directory the store no longer reads.
+    """
+    entries = _owned_entries(old)  # materialized once: the checks and the moves
+    for entry in entries:          # must agree even if a job writes meanwhile
+        dest = target / entry.name
+        if dest.exists():
+            raise FileExistsError(f"{dest} already exists — refusing to overwrite.")
+
+    moved: list[tuple[Path, Path]] = []
+    try:
+        for entry in entries:
+            dest = target / entry.name
+            shutil.move(str(entry), str(dest))
+            moved.append((entry, dest))
+    except BaseException as exc:
+        # Undo what moved. A rollback that itself fails leaves the store split,
+        # which is the one outcome this function promises not to produce — so
+        # name the stranded entries rather than reporting only the original
+        # error and letting it look like a clean no-op.
+        stranded: list[Path] = []
+        for src, dest in reversed(moved):
+            try:
+                shutil.move(str(dest), str(src))
+            except OSError:
+                stranded.append(dest)
+        if stranded:
+            raise OSError(
+                f"Move failed ({exc}) and could not be fully undone. These "
+                f"entries are now in {target} while the store still reads "
+                f"{old}: {', '.join(sorted(p.name for p in stranded))}. Move "
+                "them back by hand, or point the store at the new directory."
+            ) from exc
+        raise
+
+
+def _persist_store_dir(dir_: Path) -> None:
+    existing: dict[str, Any] = {}
+    try:
+        existing = json.loads(_CONFIG_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        pass
+    existing["projects_dir"] = str(dir_)
+    _atomic_write_text(_CONFIG_PATH, json.dumps(existing, indent=2) + "\n")
+
+
 def _check_video_id(video_id: str) -> None:
     # video_id is a YouTube id ([A-Za-z0-9_-]{11}); reject anything that could
-    # escape the store dir.
-    if "/" in video_id or "\\" in video_id or video_id in ("", ".", ".."):
+    # escape the store dir. A dot is rejected too: `_owned_entries` keys an
+    # entry by the segment before its first dot, so a dotted id would disagree
+    # with `_known_video_ids` (which uses `.stem`) and the project's own JSON
+    # would be left behind by a move.
+    if not video_id or any(c in video_id for c in "/\\."):
         raise ValueError(f"Invalid video_id: {video_id!r}")
 
 
@@ -86,6 +256,19 @@ def stages_dir(video_id: str) -> Path:
     yet). See `cache.StageCache`."""
     _check_video_id(video_id)
     return _STORE_DIR / f"{video_id}.stages"
+
+
+def _read_project(path: Path) -> dict[str, Any] | None:
+    """Parse `path` as a project file, or None if it isn't one. The projects dir
+    is user-chosen, so an unreadable file, a non-JSON file, or a JSON document
+    that isn't a project is skipped rather than raised."""
+    try:
+        project = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(project, dict) or not project.get("video_id"):
+        return None
+    return project
 
 
 def load_project(video_id: str) -> dict[str, Any] | None:
@@ -221,16 +404,16 @@ def read_events(video_id: str, name: str) -> list[dict[str, Any]]:
 
 
 def list_projects() -> list[dict[str, Any]]:
-    """Return lightweight summaries, newest-updated first."""
+    """Return lightweight summaries, newest-updated first. Files in the projects
+    dir that aren't projects are skipped — the dir is user-chosen, so a stray
+    `.json` must not break the listing."""
     if not _STORE_DIR.exists():
         return []
-    summaries: list[dict[str, Any]] = []
-    for path in _STORE_DIR.glob("*.json"):
-        try:
-            project = json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
-        summaries.append(_summarize(project))
+    summaries: list[dict[str, Any]] = [
+        _summarize(project)
+        for path in _STORE_DIR.glob("*.json")
+        if (project := _read_project(path)) is not None
+    ]
     summaries.sort(key=lambda s: s.get("updated_at") or "", reverse=True)
     return summaries
 

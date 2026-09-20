@@ -1106,3 +1106,49 @@ button.icon-btn {
   color: #04121a;
   border-color: var(--crayon-blue);
 }
+
+/* === Projects list header + Settings modal === */
+.projects-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.settings-modal {
+  max-width: 34rem;
+  width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.settings-modal h3 {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: 1.35rem;
+}
+.settings-modal .settings-path {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.settings-hint {
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.settings-move {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.settings-status {
+  min-height: 1.1em;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.settings-error {
+  color: var(--crayon-red);
+}
