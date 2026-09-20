@@ -151,3 +151,153 @@ def test_delete_removes_logs(tmp_store: Any) -> None:
 def test_invalid_log_name_rejected(tmp_store: Any, bad_name: str) -> None:
     with pytest.raises(ValueError):
         store.event_log_path("abc12345678", bad_name)
+
+
+# === Tuning Phase 2: verified selections + system layer =================
+
+import jsonschema  # noqa: E402
+
+from sheetydrums.validate import validate_selection  # noqa: E402
+
+
+def _selection(
+    sid: str = "sel_1", lane: str = "hihat_closed", bar_start: int = 1, bar_end: int = 1
+) -> dict[str, Any]:
+    return {
+        "selection_id": sid,
+        "origin": "user",
+        "lane": lane,
+        "bar_start": bar_start,
+        "bar_end": bar_end,
+        "notes": [
+            {"instrument": "hihat_closed", "position": "0", "duration": "1/8"},
+            {"instrument": "hihat_open", "position": "1/4", "duration": "1/8"},
+        ],
+        "ops": [
+            {"kind": "reclassify", "bar": bar_start, "position": "1/4",
+             "from": "hihat_closed", "to": "hihat_open"},
+        ],
+        "verified": True,
+    }
+
+
+def _system_layer(pass_id: str = "pass_1") -> dict[str, Any]:
+    return {
+        "pass_id": pass_id,
+        "ops": [
+            {"kind": "add", "bar": 1, "position": "1/2",
+             "instrument": "hihat_closed", "duration": "1/8", "origin": "system"},
+        ],
+    }
+
+
+def test_save_and_read_selections_roundtrip(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.save_selections("abc12345678", [_selection()])
+    sels = store.read_selections("abc12345678")
+    assert len(sels) == 1 and sels[0]["selection_id"] == "sel_1"
+    loaded = store.load_project("abc12345678")
+    assert loaded is not None and loaded["selections"][0]["lane"] == "hihat_closed"
+
+
+def test_read_selections_missing_project_or_field(tmp_store: Any) -> None:
+    assert store.read_selections("abc12345678") == []  # no project
+    store.save_project(_project())
+    assert store.read_selections("abc12345678") == []  # project, no selections
+
+
+def test_edit_selection_rewrites_field(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.save_selections("abc12345678", [_selection(bar_end=1)])
+    store.save_selections("abc12345678", [_selection(bar_end=4)])  # extend the range
+    sels = store.read_selections("abc12345678")
+    assert len(sels) == 1 and sels[0]["bar_end"] == 4
+
+
+def test_delete_one_selection_leaves_others(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.save_selections(
+        "abc12345678", [_selection("sel_1"), _selection("sel_2", lane="snare")]
+    )
+    remaining = [
+        s for s in store.read_selections("abc12345678") if s["selection_id"] != "sel_1"
+    ]
+    store.save_selections("abc12345678", remaining)
+    ids = [s["selection_id"] for s in store.read_selections("abc12345678")]
+    assert ids == ["sel_2"]
+
+
+def test_save_selections_missing_project_raises(tmp_store: Any) -> None:
+    with pytest.raises(KeyError):
+        store.save_selections("abc12345678", [_selection()])
+
+
+def test_save_project_rejects_invalid_selection(tmp_store: Any) -> None:
+    proj = _project()
+    bad = _selection()
+    bad["lane"] = "cowbell"  # not in the 10-class enum
+    proj["selections"] = [bad]
+    with pytest.raises(jsonschema.ValidationError):
+        store.save_project(proj)
+
+
+def test_save_project_rejects_invalid_system_layer(tmp_store: Any) -> None:
+    proj = _project()
+    proj["system_layer"] = {"pass_id": "pass_1", "ops": [{"kind": "frobnicate", "bar": 1}]}
+    with pytest.raises(jsonschema.ValidationError):
+        store.save_project(proj)
+
+
+def test_system_layer_roundtrip(tmp_store: Any) -> None:
+    proj = _project()
+    proj["system_layer"] = _system_layer()
+    store.save_project(proj)
+    loaded = store.load_project("abc12345678")
+    assert loaded is not None and loaded["system_layer"]["pass_id"] == "pass_1"
+
+
+def test_legacy_project_without_layers_still_saves(tmp_store: Any) -> None:
+    # A pre-Phase-2 project (no selections / system_layer) must save + load unchanged.
+    saved = store.save_project(_project())
+    assert "selections" not in saved and "system_layer" not in saved
+    assert store.load_project("abc12345678") is not None
+
+
+def test_append_version_writes_log(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.append_version("abc12345678", {"notation": _NOTATION, "parent_version": None})
+    versions = store.read_events("abc12345678", "versions")
+    assert len(versions) == 1 and versions[0]["at"]  # timestamp stamped
+
+
+def test_delete_project_removes_version_log(tmp_store: Any) -> None:
+    store.save_project(_project())
+    store.append_version("abc12345678", {"notation": _NOTATION})
+    assert store.event_log_path("abc12345678", "versions").exists()
+    store.delete_project("abc12345678")
+    assert not store.event_log_path("abc12345678", "versions").exists()
+
+
+def test_validate_selection_accepts_all_op_kinds() -> None:
+    sel = _selection()
+    sel["ops"] = [
+        {"kind": "add", "bar": 1, "position": "0", "instrument": "snare", "duration": "1/8"},
+        {"kind": "delete", "bar": 1, "position": "1/4", "instrument": "snare"},
+        {"kind": "reclassify", "bar": 1, "position": "1/2", "from": "hihat_closed", "to": "hihat_open"},
+        {"kind": "move", "bar": 1, "from_position": "1/8", "to_position": "3/16", "instrument": "kick"},
+    ]
+    validate_selection(sel)  # no raise
+
+
+def test_validate_selection_rejects_unknown_op_kind() -> None:
+    sel = _selection()
+    sel["ops"] = [{"kind": "warp", "bar": 1, "position": "0"}]
+    with pytest.raises(jsonschema.ValidationError):
+        validate_selection(sel)
+
+
+def test_validate_selection_rejects_out_of_enum_instrument() -> None:
+    sel = _selection()
+    sel["notes"] = [{"instrument": "triangle", "position": "0", "duration": "1/8"}]
+    with pytest.raises(jsonschema.ValidationError):
+        validate_selection(sel)
