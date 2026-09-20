@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch supersedes the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend (pytest)
+    # macOS/arm64 deliberately, not ubuntu: the locked dependency set resolves
+    # torch's Linux wheels, which drag in 19 nvidia/CUDA packages (several GB)
+    # that these tests never touch — they run against pure fakes. arm64 is also
+    # the platform the pipeline is developed and run on (MPS), and the
+    # `audio-separator[silicon]` extra is built for it. Free on a public repo.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv + Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          # Pinned, not `>=3.12` from requires-python: otherwise uv picks up
+          # whatever the runner image ships and CI silently tests a different
+          # minor than local development does.
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        # --frozen: fail if uv.lock disagrees with pyproject.toml rather than
+        # silently re-resolving, so a stale lock is a CI failure not a surprise.
+        run: uv sync --frozen
+        working-directory: backend
+
+      - name: Tests
+        # Fast tests only. `--run-slow` adds the end-to-end smoke test, which
+        # downloads ~1.1 GB of model weights (Demucs 320 MB, Beat This! 77 MB,
+        # DrumSep 700 MB) on a cold runner — run that locally before a release.
+        run: uv run --frozen pytest -q
+        working-directory: backend
+
+  frontend:
+    name: frontend (types)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Generated types match the schemas
+        # The two halves talk only through schema/*.schema.json, and the
+        # frontend's types are generated from it and checked in. Regenerating
+        # must be a no-op; a diff here means someone changed a schema without
+        # running `pnpm run schema:gen`, which would leave the frontend
+        # typechecking against a contract the backend no longer emits.
+        run: |
+          pnpm run schema:gen
+          git diff --exit-code -- src/generated \
+            || { echo "::error::src/generated is stale — run 'pnpm run schema:gen' and commit the result"; exit 1; }
+        working-directory: frontend
+
+      - name: Typecheck
+        run: pnpm run typecheck
+        working-directory: frontend
