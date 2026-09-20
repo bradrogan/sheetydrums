@@ -790,3 +790,65 @@ export function formatPosition(sixteenths: number): string {
 function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }
+
+// === Tuning Phase 2: staff lanes (verified selections) ==================
+// A "lane" is a selectable staff row. hihat_closed/hihat_open share the `hihat`
+// lane (open/closed is a per-note property); everything else — including
+// hihat_chick — is its own lane. Mirrors the backend lane_of and edit.ts.
+
+export type LaneKey =
+  | 'kick' | 'snare' | 'hihat' | 'hihat_chick' | 'ride' | 'crash'
+  | 'tom_high' | 'tom_mid' | 'tom_low';
+
+export function laneOf(instrument: SchemaDrumClass): LaneKey {
+  return instrument === 'hihat_open' || instrument === 'hihat_closed'
+    ? 'hihat'
+    : (instrument as LaneKey);
+}
+
+/** A representative instrument per lane — used to look up the lane's staff y. */
+const LANE_REPRESENTATIVE: Record<LaneKey, SchemaDrumClass> = {
+  kick: 'kick', snare: 'snare', hihat: 'hihat_closed', hihat_chick: 'hihat_chick',
+  ride: 'ride', crash: 'crash', tom_high: 'tom_high', tom_mid: 'tom_mid', tom_low: 'tom_low',
+};
+
+export const LANE_KEYS: LaneKey[] = Object.keys(LANE_REPRESENTATIVE) as LaneKey[];
+
+/** The lane whose staff line is nearest `y` (a viewBox y, 0..BAR_SVG_HEIGHT). */
+export function laneAtY(model: RenderModel, y: number): LaneKey {
+  let best: LaneKey = 'snare';
+  let bestDist = Infinity;
+  for (const lane of LANE_KEYS) {
+    const dist = Math.abs(model.instrumentYs[LANE_REPRESENTATIVE[lane]] - y);
+    if (dist < bestDist) {
+      best = lane;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/** The viewBox y (0..BAR_SVG_HEIGHT) of a lane's staff line. */
+export function laneYOf(model: RenderModel, lane: LaneKey): number {
+  return model.instrumentYs[LANE_REPRESENTATIVE[lane]];
+}
+
+/** Vertical half-height (viewBox units) of a selection band around a lane line. */
+const LANE_BAND_HALF_H = 7;
+
+/**
+ * Draw a translucent selection band for `lane` spanning the full note region of
+ * `bv`, appended to the bar's svgHost. Because drawBar clears the host, the
+ * caller must re-apply this after each redraw (as with the column highlight).
+ * Returns the element so the caller can track/remove it.
+ */
+export function drawSelectionBand(bv: BarView, laneY: number, className: string): HTMLDivElement {
+  const band = document.createElement('div');
+  band.className = className;
+  band.style.left = `${(bv.contentX0 / BAR_SVG_WIDTH) * 100}%`;
+  band.style.width = `${((bv.contentX1 - bv.contentX0) / BAR_SVG_WIDTH) * 100}%`;
+  band.style.top = `${((laneY - LANE_BAND_HALF_H) / BAR_SVG_HEIGHT) * 100}%`;
+  band.style.height = `${((2 * LANE_BAND_HALF_H) / BAR_SVG_HEIGHT) * 100}%`;
+  bv.svgHost.appendChild(band);
+  return band;
+}

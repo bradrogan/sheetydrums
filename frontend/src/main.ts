@@ -366,6 +366,9 @@ async function showProject(videoId: string): Promise<void> {
     editToggle: byId('edit-toggle') as HTMLButtonElement,
     saveBtn: byId('save-btn') as HTMLButtonElement,
     scoreEl: byId('score'),
+    // Persisted verified selections (the user layer) to draw as bands. edit.ts
+    // mutates this array in place as selections are committed — no full reload.
+    selections: (project.selections ?? []) as unknown as api.Selection[],
   });
   await setupPlayback(project, model, sync);
   setupTuningPanel(project, events);

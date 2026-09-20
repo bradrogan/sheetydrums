@@ -141,6 +141,105 @@ export async function deleteProject(videoId: string): Promise<void> {
   await ok(await fetch(`/projects/${encodeURIComponent(videoId)}`, { method: 'DELETE' }));
 }
 
+// === Tuning Phase 2: verified selections (user layer) + layered read ===
+
+type SchemaClass = Notation['bars'][number]['notes'][number]['instrument'];
+export type NoteObj = Notation['bars'][number]['notes'][number];
+/** A frozen note plus the bar it belongs to (a within-bar position is ambiguous
+ * across a multi-bar region). Mirrors the backend RegionNote. */
+export interface RegionNote {
+  bar: number;
+  note: NoteObj;
+}
+
+/** One anchored edit. Positions are exact rational strings ("1/4"), never
+ * sixteenth indices, matching the backend Op vocabulary. */
+export type Op =
+  | { kind: 'add'; bar: number; position: string; instrument: SchemaClass; duration: string }
+  | { kind: 'delete'; bar: number; position: string; instrument: SchemaClass }
+  | { kind: 'reclassify'; bar: number; position: string; from: SchemaClass; to: SchemaClass }
+  | { kind: 'move'; bar: number; from_position: string; to_position: string; instrument: SchemaClass };
+
+export interface Selection {
+  selection_id: string;
+  origin: 'user';
+  lane: string;
+  bar_start: number;
+  bar_end: number;
+  notes: RegionNote[];
+  ops: Op[];
+  verified: boolean;
+  base_fingerprint?: string;
+  created_at?: string;
+}
+
+/** origin_map is keyed by bar index; JSON object keys are strings even though
+ * the backend keys them by int, so read `origin_map[String(barIndex)]`. */
+export type OriginMap = Record<string, ('base' | 'system' | 'user')[]>;
+
+export interface Layers {
+  base: Notation;
+  system_layer: { pass_id: string; ops: Op[] } | null;
+  selections: Selection[];
+  effective: Notation;
+  origin_map: OriginMap;
+}
+
+export interface SelectionInput {
+  lane: string;
+  bar_start: number;
+  bar_end: number;
+  notes: RegionNote[];
+  ops: Op[];
+}
+
+export async function getLayers(videoId: string): Promise<Layers> {
+  const resp = await ok(await fetch(`/projects/${encodeURIComponent(videoId)}/layers`));
+  return (await resp.json()) as Layers;
+}
+
+export async function createSelection(videoId: string, body: SelectionInput): Promise<Selection> {
+  const resp = await ok(
+    await fetch(`/projects/${encodeURIComponent(videoId)}/selections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  );
+  return (await resp.json()) as Selection;
+}
+
+export async function updateSelection(
+  videoId: string,
+  selectionId: string,
+  body: SelectionInput,
+): Promise<Selection> {
+  const resp = await ok(
+    await fetch(
+      `/projects/${encodeURIComponent(videoId)}/selections/${encodeURIComponent(selectionId)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    ),
+  );
+  return (await resp.json()) as Selection;
+}
+
+export async function deleteSelection(videoId: string, selectionId: string): Promise<void> {
+  await ok(
+    await fetch(
+      `/projects/${encodeURIComponent(videoId)}/selections/${encodeURIComponent(selectionId)}`,
+      { method: 'DELETE' },
+    ),
+  );
+}
+
+export async function clearSystemPass(videoId: string): Promise<void> {
+  await ok(await fetch(`/projects/${encodeURIComponent(videoId)}/system`, { method: 'DELETE' }));
+}
+
 // === Settings: where projects are stored ===
 export interface Settings {
   projects_dir: string;
