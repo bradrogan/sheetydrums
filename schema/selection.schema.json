@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://sheetydrums.local/schema/selection.schema.json",
   "title": "Verified selection (tuning Phase 2 — user layer)",
-  "description": "A closed-world, fully-labelled correction patch over one instrument lane across a range of whole bars. Every note the user left in the region counts as ground truth alongside the ones they changed, giving the future param search both positive and negative labels. Persisted selections are always verified. The frozen `notes` are authoritative at compose time; `ops` are the change-history/replay mechanism only. See docs/design/phase2-plan.md §1.2.",
+  "description": "A closed-world, fully-labelled correction patch over one instrument LANE across a range of whole bars. Every note the user left in the region counts as ground truth alongside the ones they changed, giving the future param search both positive and negative labels. Persisted selections are always verified. The frozen `notes` are authoritative at compose time; `ops` are the change-history/replay mechanism only. See docs/design/phase2-plan.md §1.2.",
   "type": "object",
   "required": ["selection_id", "origin", "lane", "bar_start", "bar_end", "notes", "ops", "verified"],
   "properties": {
@@ -16,8 +16,8 @@
       "description": "Provenance tag. Always 'user' for a verified selection."
     },
     "lane": {
-      "$ref": "events.schema.json#/$defs/Note/properties/instrument",
-      "description": "The single instrument lane this selection owns (one of the 10 drum classes)."
+      "$ref": "#/$defs/Lane",
+      "description": "The single instrument lane this selection owns."
     },
     "bar_start": {
       "type": "integer",
@@ -31,8 +31,8 @@
     },
     "notes": {
       "type": "array",
-      "items": { "$ref": "events.schema.json#/$defs/Note" },
-      "description": "Frozen closed-world ground truth: every corrected note for `lane` across bars bar_start..bar_end, as full events-contract Note objects. Authoritative at compose time and the labels the param search reproduces."
+      "items": { "$ref": "#/$defs/RegionNote" },
+      "description": "Frozen closed-world ground truth: every corrected note for `lane` across bars bar_start..bar_end, each tagged with its bar (a within-bar position alone is ambiguous across a multi-bar region). Authoritative at compose time and the labels the param search reproduces."
     },
     "ops": {
       "type": "array",
@@ -53,6 +53,36 @@
     }
   },
   "$defs": {
+    "Lane": {
+      "type": "string",
+      "enum": [
+        "kick",
+        "snare",
+        "hihat",
+        "hihat_chick",
+        "ride",
+        "crash",
+        "tom_high",
+        "tom_mid",
+        "tom_low"
+      ],
+      "description": "A staff lane the user can select and lock. `hihat` covers both hihat_closed and hihat_open (they share a lane; the open/closed distinction is a per-note property), so a verified hi-hat region owns every closed AND open hat in it. hihat_chick (foot close) is its own lane. Mirrors the frontend editor's lane vocabulary (edit.ts laneOf)."
+    },
+    "RegionNote": {
+      "type": "object",
+      "required": ["bar", "note"],
+      "properties": {
+        "bar": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based bar this frozen note belongs to. Must fall within [bar_start, bar_end]."
+        },
+        "note": {
+          "$ref": "events.schema.json#/$defs/Note",
+          "description": "A full events-contract Note. Its instrument must belong to `lane` (lane_of(instrument) == lane)."
+        }
+      }
+    },
     "Op": {
       "description": "One anchored edit. Positions are exact rational strings (never rounded sixteenth indices) so triplet/tuplet edits stay representable. Reused by the system layer, whose ops carry origin='system'.",
       "oneOf": [

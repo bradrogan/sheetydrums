@@ -161,7 +161,7 @@ from sheetydrums.validate import validate_selection  # noqa: E402
 
 
 def _selection(
-    sid: str = "sel_1", lane: str = "hihat_closed", bar_start: int = 1, bar_end: int = 1
+    sid: str = "sel_1", lane: str = "hihat", bar_start: int = 1, bar_end: int = 1
 ) -> dict[str, Any]:
     return {
         "selection_id": sid,
@@ -170,8 +170,8 @@ def _selection(
         "bar_start": bar_start,
         "bar_end": bar_end,
         "notes": [
-            {"instrument": "hihat_closed", "position": "0", "duration": "1/8"},
-            {"instrument": "hihat_open", "position": "1/4", "duration": "1/8"},
+            {"bar": bar_start, "note": {"instrument": "hihat_closed", "position": "0", "duration": "1/8"}},
+            {"bar": bar_start, "note": {"instrument": "hihat_open", "position": "1/4", "duration": "1/8"}},
         ],
         "ops": [
             {"kind": "reclassify", "bar": bar_start, "position": "1/4",
@@ -197,7 +197,7 @@ def test_save_and_read_selections_roundtrip(tmp_store: Any) -> None:
     sels = store.read_selections("abc12345678")
     assert len(sels) == 1 and sels[0]["selection_id"] == "sel_1"
     loaded = store.load_project("abc12345678")
-    assert loaded is not None and loaded["selections"][0]["lane"] == "hihat_closed"
+    assert loaded is not None and loaded["selections"][0]["lane"] == "hihat"
 
 
 def test_read_selections_missing_project_or_field(tmp_store: Any) -> None:
@@ -216,9 +216,10 @@ def test_edit_selection_rewrites_field(tmp_store: Any) -> None:
 
 def test_delete_one_selection_leaves_others(tmp_store: Any) -> None:
     store.save_project(_project())
-    store.save_selections(
-        "abc12345678", [_selection("sel_1"), _selection("sel_2", lane="snare")]
-    )
+    snare_sel = _selection("sel_2", lane="snare")
+    snare_sel["notes"] = [{"bar": 1, "note": {"instrument": "snare", "position": "1/4", "duration": "1/8"}}]
+    snare_sel["ops"] = []
+    store.save_selections("abc12345678", [_selection("sel_1"), snare_sel])
     remaining = [
         s for s in store.read_selections("abc12345678") if s["selection_id"] != "sel_1"
     ]
@@ -298,6 +299,12 @@ def test_validate_selection_rejects_unknown_op_kind() -> None:
 
 def test_validate_selection_rejects_out_of_enum_instrument() -> None:
     sel = _selection()
-    sel["notes"] = [{"instrument": "triangle", "position": "0", "duration": "1/8"}]
+    sel["notes"] = [{"bar": 1, "note": {"instrument": "triangle", "position": "0", "duration": "1/8"}}]
+    with pytest.raises(jsonschema.ValidationError):
+        validate_selection(sel)
+
+
+def test_validate_selection_rejects_bad_lane() -> None:
+    sel = _selection(lane="hihat_closed")  # instrument class, not a lane key
     with pytest.raises(jsonschema.ValidationError):
         validate_selection(sel)
