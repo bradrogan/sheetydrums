@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sheetydrums.validate import validate
+from sheetydrums.validate import validate, validate_selection, validate_system_layer
 
 _STORE_DIR: Path = Path.home() / ".cache" / "sheetydrums" / "projects"
 
@@ -104,6 +104,12 @@ def save_project(project: dict[str, Any]) -> dict[str, Any]:
     """
     video_id: str = project["video_id"]
     validate(project["notation"])
+    # Tuning Phase 2 layers are additive/optional — validate only when present, so
+    # pre-Phase-2 projects (no selections / system_layer) keep saving unchanged.
+    for sel in project.get("selections") or []:
+        validate_selection(sel)
+    if project.get("system_layer") is not None:
+        validate_system_layer(project["system_layer"])
 
     existing = load_project(video_id)
     now = _now_iso()
@@ -115,6 +121,36 @@ def save_project(project: dict[str, Any]) -> dict[str, Any]:
 
     _atomic_write_text(_path_for(video_id), json.dumps(project, indent=2) + "\n")
     return project
+
+
+# === Tuning Phase 2: user layer (verified selections) ===================
+# The user layer is a rewritable project-record field (not an append-only log)
+# because selections mutate after creation — edge-adjust, re-verify, undo — all
+# of which are ordinary field rewrites. See docs/design/phase2-plan.md §1.1.
+
+
+def save_selections(video_id: str, selections: list[dict[str, Any]]) -> dict[str, Any]:
+    """Replace a project's verified-selection list (the user layer), validating
+    each. Returns the stored project. Raises KeyError if the project is missing
+    and jsonschema.ValidationError on an invalid selection (via save_project)."""
+    project = load_project(video_id)
+    if project is None:
+        raise KeyError(f"No project {video_id!r}")
+    project["selections"] = selections
+    return save_project(project)
+
+
+def read_selections(video_id: str) -> list[dict[str, Any]]:
+    """Return a project's verified selections, or [] if none / project missing."""
+    project = load_project(video_id)
+    return list((project or {}).get("selections") or [])
+
+
+def append_version(video_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Append an immutable version snapshot to the append-only version log.
+    Write-only in Phase 2 (nothing reads it back yet) — it is the audit trail the
+    Phase 3 parameter search will score against. Returns the stored record."""
+    return append_event(video_id, "versions", snapshot)
 
 
 def delete_project(video_id: str) -> bool:
