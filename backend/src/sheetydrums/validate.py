@@ -96,8 +96,12 @@ def check_selection_invariants(selections: list[dict[str, Any]]) -> None:
 
 
 def _check_selection_fields(selection: dict[str, Any]) -> None:
-    """One selection's own invariants: bar_end >= bar_start, every frozen note's
-    bar inside [bar_start, bar_end], every frozen note's instrument in `lane`."""
+    """One selection's own invariants: bar_end >= bar_start; every frozen note's
+    bar inside [bar_start, bar_end] and its instrument in `lane`; no two frozen
+    notes at one (bar, position) in the lane (a lane can't sound twice at one
+    instant — otherwise the renderer draws stacked noteheads and the closed-world
+    labels contradict); every op's bar inside the region (ops are edits *within*
+    the selection)."""
     sid = selection.get("selection_id")
     start: int = selection["bar_start"]
     end: int = selection["bar_end"]
@@ -106,9 +110,11 @@ def _check_selection_fields(selection: dict[str, Any]) -> None:
             f"Selection {sid!r}: bar_end ({end}) is before bar_start ({start})."
         )
     lane: str = selection["lane"]
+    seen: set[tuple[int, Fraction]] = set()
     for item in selection["notes"]:
         bar: int = item["bar"]
-        instrument: str = item["note"]["instrument"]
+        note = item["note"]
+        instrument: str = note["instrument"]
         if not start <= bar <= end:
             raise ValueError(
                 f"Selection {sid!r}: frozen note in bar {bar} is outside the "
@@ -118,6 +124,19 @@ def _check_selection_fields(selection: dict[str, Any]) -> None:
             raise ValueError(
                 f"Selection {sid!r}: frozen note instrument {instrument!r} "
                 f"belongs to lane {lane_of(instrument)!r}, not {lane!r}."
+            )
+        key = (bar, Fraction(note["position"]))
+        if key in seen:
+            raise ValueError(
+                f"Selection {sid!r}: two frozen notes at bar {bar} position "
+                f"{note['position']} in lane {lane!r} — a lane sounds once per instant."
+            )
+        seen.add(key)
+    for op in selection["ops"]:
+        if not start <= op["bar"] <= end:
+            raise ValueError(
+                f"Selection {sid!r}: op in bar {op['bar']} is outside the "
+                f"selection's region [{start}, {end}]."
             )
 
 

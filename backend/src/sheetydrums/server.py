@@ -6,10 +6,15 @@ via `store.py`, keyed by video id. Endpoints:
   POST   /transcribe             {url}     → open existing project or start a job
   GET    /jobs/{id}/stream                 → SSE progress, terminal event carries project/preview
   GET    /projects                         → list summaries
-  GET    /projects/{id}                    → full project
-  GET    /projects/{id}/diagnose           → notation diagnostics summary
+  GET    /projects/{id}                    → full project (notation = composed effective layer)
+  GET    /projects/{id}/layers             → {base, system_layer, selections, effective, origin_map}
+  GET    /projects/{id}/diagnose           → diagnostics on the effective notation
   POST   /projects/{id}/retune  {params}   → re-run with new params, stream a preview (job)
-  PUT    /projects/{id}          {notation,params?} → save edited/accepted notation
+  PUT    /projects/{id}          {notation,params?} → save BASE notation (retune-accept path)
+  POST   /projects/{id}/selections {lane,bar_start,bar_end,notes,ops} → create a verified selection
+  PUT    /projects/{id}/selections/{sid}   → edit a verified selection
+  DELETE /projects/{id}/selections/{sid}   → undo a verified selection
+  DELETE /projects/{id}/system             → clear the system pass (user edits untouched)
   DELETE /projects/{id}                    → remove
   GET    /settings                         → projects-dir settings
   PUT    /settings   {projects_dir, move_existing?} → change projects dir (opt. move files)
@@ -29,15 +34,19 @@ import threading
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import jsonschema
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from sheetydrums import store
+from sheetydrums.anchor import region_fingerprint
+from sheetydrums.layering import compose
 
 
 # Sentinel pushed onto a job's progress queue when the worker is done.
@@ -381,6 +390,17 @@ async def update_settings(req: UpdateSettings = Body(...)) -> dict[str, Any]:
 # === Project CRUD ===
 
 
+def _load_or_404(video_id: str) -> dict[str, Any]:
+    project = store.load_project(video_id)
+    if project is None:
+        raise HTTPException(404, f"No project for video_id {video_id!r}")
+    return project
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 @app.get("/projects")
 async def list_projects() -> dict[str, Any]:
     return {"projects": store.list_projects()}
@@ -388,12 +408,19 @@ async def list_projects() -> dict[str, Any]:
 
 @app.get("/projects/{video_id}")
 async def get_project(video_id: str) -> dict[str, Any]:
-    project = store.load_project(video_id)
-    if project is None:
-        raise HTTPException(404, f"No project for video_id {video_id!r}")
-    # Runtime-only flags (not persisted): which alternate audio tracks exist.
+    project = _load_or_404(video_id)
+    # `notation` the client renders/plays is the COMPOSED effective layer
+    # (base + system + verified selections); the raw generator output stays
+    # available as `base_notation` for the retune-accept path. For a legacy
+    # project (no layers) effective == base, so this is behaviour-neutral.
+    effective, _ = compose(
+        project.get("notation") or {}, project.get("system_layer"), project.get("selections") or []
+    )
     return {
         **project,
+        "notation": effective,
+        "base_notation": project.get("notation"),
+        # Runtime-only flags (not persisted): which alternate audio tracks exist.
         "has_stem": store.has_stem(video_id),
         "has_drumless": store.has_drumless(video_id),
     }
@@ -401,14 +428,17 @@ async def get_project(video_id: str) -> dict[str, Any]:
 
 @app.get("/projects/{video_id}/diagnose")
 async def diagnose_project(video_id: str) -> dict[str, Any]:
-    """Structured diagnostics for the project's current notation (per-class
-    counts, hi-hat balance, confidence, empty bars, heuristic flags)."""
+    """Structured diagnostics for the project's EFFECTIVE notation (per-class
+    counts, hi-hat balance, confidence, empty bars, heuristic flags). Runs on the
+    composed layer so diagnostics reflect the user's corrections, not the raw
+    generator output."""
     from sheetydrums.diagnostics import diagnose
 
-    project = store.load_project(video_id)
-    if project is None:
-        raise HTTPException(404, f"No project for video_id {video_id!r}")
-    return diagnose(project.get("notation") or {})
+    project = _load_or_404(video_id)
+    effective, _ = compose(
+        project.get("notation") or {}, project.get("system_layer"), project.get("selections") or []
+    )
+    return diagnose(effective)
 
 
 @app.get("/projects/{video_id}/drums.wav")
@@ -431,10 +461,13 @@ async def get_drumless(video_id: str) -> FileResponse:
 
 @app.put("/projects/{video_id}")
 async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Save edited notation for an existing project.
+    """Save BASE notation for an existing project — the retune-accept path.
 
-    Body: {"notation": <events>}. Validates before persisting; preserves the
-    project's source + created_at.
+    Body: {"notation": <events>}. This replaces the base layer (the generator
+    output); user corrections live in the user layer via the /selections
+    endpoints and are preserved here untouched. Do NOT PUT the composed
+    `effective` notation back — that would flatten the layers. Validates before
+    persisting; preserves the project's source + created_at + selections.
     """
     existing = store.load_project(video_id)
     if existing is None:
@@ -484,6 +517,130 @@ async def delete_project(video_id: str) -> dict[str, Any]:
     if not removed:
         raise HTTPException(404, f"No project for video_id {video_id!r}")
     return {"deleted": video_id}
+
+
+# === Tuning Phase 2: layers (verified selections + system pass) =========
+
+
+@app.get("/projects/{video_id}/layers")
+async def get_layers(video_id: str) -> dict[str, Any]:
+    """The full layered view: raw base, the system pass, the user's verified
+    selections, and the composed effective notation with a per-note origin map
+    (base | system | user) so the client can colour the delta."""
+    project = _load_or_404(video_id)
+    effective, origin_map = compose(
+        project.get("notation") or {}, project.get("system_layer"), project.get("selections") or []
+    )
+    return {
+        "base": project.get("notation"),
+        "system_layer": project.get("system_layer"),
+        "selections": project.get("selections") or [],
+        "effective": effective,
+        "origin_map": origin_map,
+    }
+
+
+class SelectionBody(BaseModel):
+    lane: str
+    bar_start: int
+    bar_end: int
+    notes: list[dict[str, Any]] = []
+    ops: list[dict[str, Any]] = []
+
+
+def _base_max_bar(base: dict[str, Any]) -> int:
+    return max((b["index"] for b in base.get("bars") or []), default=0)
+
+
+def _validate_region_in_base(base: dict[str, Any], bar_start: int, bar_end: int) -> None:
+    if bar_start < 1 or bar_end < bar_start:
+        raise HTTPException(400, f"Invalid bar range [{bar_start}, {bar_end}].")
+    mx = _base_max_bar(base)
+    if bar_end > mx:
+        raise HTTPException(400, f"bar_end {bar_end} exceeds the song's {mx} bars.")
+
+
+def _build_selection(
+    sid: str, body: SelectionBody, base: dict[str, Any], created_at: str
+) -> dict[str, Any]:
+    """Assemble a stored verified-selection record from a request body, stamping
+    the server-owned fields. base_fingerprint pins the base under the region at
+    verify time so re-generation can later detect drift (2f)."""
+    return {
+        "selection_id": sid,
+        "origin": "user",
+        "lane": body.lane,
+        "bar_start": body.bar_start,
+        "bar_end": body.bar_end,
+        "notes": body.notes,
+        "ops": body.ops,
+        "verified": True,
+        "base_fingerprint": region_fingerprint(base, body.lane, body.bar_start, body.bar_end),
+        "created_at": created_at,
+    }
+
+
+def _save_selections_or_422(video_id: str, selections: list[dict[str, Any]]) -> None:
+    try:
+        store.save_selections(video_id, selections)
+    except (jsonschema.ValidationError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/projects/{video_id}/selections")
+async def create_selection(video_id: str, body: SelectionBody = Body(...)) -> dict[str, Any]:
+    """Create a verified selection (the user layer). The server stamps the id,
+    origin, verified flag, created_at, and base_fingerprint; the whole user layer
+    is then re-validated (schema + field + no-lane-overlap invariants) on save."""
+    project = _load_or_404(video_id)
+    base = project.get("notation") or {}
+    _validate_region_in_base(base, body.bar_start, body.bar_end)
+    sel = _build_selection("sel_" + uuid.uuid4().hex, body, base, _now_iso())
+    _save_selections_or_422(video_id, [*(project.get("selections") or []), sel])
+    return sel
+
+
+@app.put("/projects/{video_id}/selections/{sid}")
+async def update_selection(
+    video_id: str, sid: str, body: SelectionBody = Body(...)
+) -> dict[str, Any]:
+    """Edit a verified selection (adjust its region / notes / re-verify).
+    base_fingerprint is recomputed against the current base for the (possibly
+    new) region; created_at is preserved."""
+    project = _load_or_404(video_id)
+    selections = project.get("selections") or []
+    idx = next((i for i, s in enumerate(selections) if s["selection_id"] == sid), None)
+    if idx is None:
+        raise HTTPException(404, f"No selection {sid!r}")
+    base = project.get("notation") or {}
+    _validate_region_in_base(base, body.bar_start, body.bar_end)
+    updated = _build_selection(sid, body, base, selections[idx].get("created_at") or _now_iso())
+    _save_selections_or_422(video_id, [*selections[:idx], updated, *selections[idx + 1 :]])
+    return updated
+
+
+@app.delete("/projects/{video_id}/selections/{sid}")
+async def delete_selection(video_id: str, sid: str) -> dict[str, Any]:
+    """Undo a verified selection as a unit."""
+    project = _load_or_404(video_id)
+    selections = project.get("selections") or []
+    remaining = [s for s in selections if s["selection_id"] != sid]
+    if len(remaining) == len(selections):
+        raise HTTPException(404, f"No selection {sid!r}")
+    _save_selections_or_422(video_id, remaining)
+    return {"deleted": sid}
+
+
+@app.delete("/projects/{video_id}/system")
+async def clear_system_layer(video_id: str) -> dict[str, Any]:
+    """Undo the current 'fix the rest' system pass as a unit. Reverts only the
+    system layer — never a user edit. (Phase 2 has nothing that sets it yet;
+    owning the revert path is Phase 2's obligation.)"""
+    project = _load_or_404(video_id)
+    cleared = (project.get("system_layer") or {}).get("pass_id")
+    project["system_layer"] = None
+    store.save_project(project)
+    return {"cleared": cleared}
 
 
 def main_serve() -> None:
