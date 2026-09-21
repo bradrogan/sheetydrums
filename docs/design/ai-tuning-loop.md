@@ -319,6 +319,29 @@ distinct after:
   unit. Undoing a system pass reverts only its layer, never a user edit.
 - Accept/undo a pass as a unit (per-region accept is a later nicety, not v1).
 
+**The same delta view covers a manual re-tune / re-generation, not just a system
+pass** (decided with the user 2026-09-20). Any preview that produces a new base —
+the Phase 1 manual param re-tune, and later any full re-generation — is reviewed
+the same way, so the user never has to memorise the before and compare by eye:
+
+- **Per-note before/after on one composed score.** Notes the re-run *added* render
+  in the change colour; notes it *removed* stay visible as ghosted/struck
+  outgoing notes; *reclassified* notes are recoloured. One score, both states —
+  no side-by-side, no memorising. (This supersedes the interim Phase-1 stopgap,
+  which only outlines the changed *bars*.)
+- **Verified sections stay visible through the preview and are never silently
+  altered.** They overlay the previewed base exactly as at compose time (user
+  wins), drawn in the user colour, so it's obvious your corrections survived.
+- **Base-under-a-verified-region drift is flagged.** If the re-gen changed the
+  base beneath a verified region (`anchor.region_status` → `drifted`) or removed
+  its bars (`missing`), that selection is marked in the delta + the change log so
+  you can re-check or re-verify it — this is the same conflict set
+  `reconcile_selections` returns on accept (§2f), surfaced at *preview* time too.
+
+So a re-tune review answers, on one screen: what the re-run changed (added/
+removed/reclassified), what you had verified (still shown), and whether any of
+your verified regions need another look.
+
 ## Building block 7 — versioning
 
 Each generation is an immutable snapshot: `{params, notation, edits_applied,
