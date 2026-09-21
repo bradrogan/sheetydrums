@@ -2,7 +2,7 @@ import { renderScore } from './render';
 import { createYouTubePlayer, type PlayerHandle } from './playback';
 import { createAudioPlayer } from './audioPlayer';
 import { SyncController } from './sync';
-import { setupEditing, editSession } from './edit';
+import { setupEditing, editSession, type EditHandle } from './edit';
 import { setupTuning } from './tuning';
 import { openSettings } from './settings';
 import { injectPoo } from './poo';
@@ -358,7 +358,7 @@ async function showProject(videoId: string, opts?: { edit?: boolean }): Promise<
   byId('raw').textContent = JSON.stringify(events, null, 2);
 
   const sync = new SyncController(model);
-  setupEditing({
+  const editHandle = setupEditing({
     project,
     notation: events,
     model,
@@ -375,7 +375,7 @@ async function showProject(videoId: string, opts?: { edit?: boolean }): Promise<
     editPanel: byId('edit-panel'),
   });
   await setupPlayback(project, model, sync);
-  setupTuningPanel(project, events);
+  setupTuningPanel(project, events, editHandle);
   // Re-enter edit mode after a rebuild requested it (e.g. accepting/discarding a
   // re-tune, which happens from edit mode) so the verified sections stay visible
   // instead of dropping the user to the plain view.
@@ -383,9 +383,10 @@ async function showProject(videoId: string, opts?: { edit?: boolean }): Promise<
 }
 
 // Wire the "Tune" toggle + manual params panel (Phase 1). The panel lives in the
-// left column; toggling reveals it. Preview renders into the score read-only;
-// Accept/Discard re-route to reload the project so sync/edit rebind cleanly.
-function setupTuningPanel(project: Project, events: Notation): void {
+// left column; toggling reveals it. Preview renders THROUGH the edit layer (via
+// the EditHandle) so the user's verified sections stay overlaid and the delta is
+// visible; Discard reverts in place, Accept reloads so sync/edit rebind cleanly.
+function setupTuningPanel(project: Project, events: Notation, editHandle: EditHandle): void {
   const toggle = byId('tune-toggle') as HTMLButtonElement;
   const panel = byId('tuning-panel');
   // The panel + toggle are shared DOM across navigation — reset per project so a
@@ -408,26 +409,16 @@ function setupTuningPanel(project: Project, events: Notation): void {
         project,
         notation: events,
         panel,
-        // Tuning is gated to edit mode (see edit.ts / CSS), so the score is in
-        // the grid layout — render the preview the same way so classification
-        // changes (open/closed hats, tom pitch) are legible, not squished. The
-        // preview replaces the score wholesale, stranding the edit layer's
-        // floating overlays on a now-detached model, so drop them; Accept/Discard
-        // reloads the project, which rebuilds them cleanly.
-        renderPreview: (n, changedBars) => {
-          document
-            .querySelectorAll('.selection-toolbar, .edit-popover')
-            .forEach((e) => e.remove());
-          renderScore(byId('score'), n, { grid: true });
-          // Flag the bars the re-tune changed so it's obvious what moved.
-          for (const idx of changedBars ?? []) {
-            byId('score')
-              .querySelector(`.bar-row[data-bar-index="${idx}"]`)
-              ?.classList.add('bar-changed');
-          }
-        },
-        // Re-tune runs from edit mode; stay there on accept/discard so the
-        // verified sections + delta coloring remain visible.
+        // Tuning is gated to edit mode, so the score is in the grid layout.
+        // Route the preview through the edit layer: the handle composes the
+        // re-tuned base with the user's verified selections (kept overlaid),
+        // redraws in place — no reload, so no scroll jump — and returns the diff
+        // for the summary. clearPreview reverts to the current effective view.
+        renderPreview: (n) => editHandle.preview(n),
+        clearPreview: () => editHandle.clearPreview(),
+        // Accept runs a PUT that rewrites the base + reconciles selections, so
+        // reload to rebind sync/edit against the new project cleanly. Re-tune
+        // runs from edit mode; stay there so verified sections stay visible.
         reload: () => { void showProject(project.video_id, { edit: true }); },
         onClose: close,
       });

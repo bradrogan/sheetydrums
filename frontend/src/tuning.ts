@@ -67,9 +67,11 @@ export interface TuningContext {
   project: Project;
   notation: Notation;
   panel: HTMLElement;
-  /** Render the preview notation; `changedBars` (from the diff) are flagged on
-   * the score so it's visible what the re-tune changed. */
-  renderPreview: (n: Notation, changedBars?: number[]) => void;
+  /** Render the re-tuned base through the edit layer (verified selections
+   * overlaid + changed-bars delta) and return the diff for the summary. */
+  renderPreview: (previewBase: Notation) => NotationDiff;
+  /** Revert the preview in place (Discard). */
+  clearPreview: () => void;
   reload: () => void;
   onClose: () => void;
 }
@@ -308,10 +310,9 @@ export function setupTuning(ctx: TuningContext): void {
         activeSource = null;
         preview = p;
         setRunning(false);
-        status.textContent = 'Preview ready — changed bars are highlighted. Accept or Discard.';
-        const d = diffNotation(ctx.notation, p.notation);
+        status.textContent = 'Preview ready — changed bars are highlighted, your verified sections kept. Accept or Discard.';
+        const d = ctx.renderPreview(p.notation); // composes with selections + renders + returns the diff
         renderDiff(diffBox, d);
-        ctx.renderPreview(p.notation, d.changedBars);
         acceptBtn.hidden = discardBtn.hidden = false;
         lockForPreview(true); // only Accept/Discard until this preview is resolved
       },
@@ -341,7 +342,11 @@ export function setupTuning(ctx: TuningContext): void {
     activeSource?.close();
     activeSource = null;
     preview = null;
-    ctx.reload();
+    ctx.clearPreview(); // revert in place through the edit layer — no reload/jump
+    lockForPreview(false); // knobs usable again
+    acceptBtn.hidden = discardBtn.hidden = true;
+    diffBox.innerHTML = '';
+    status.textContent = '';
   }
 }
 
