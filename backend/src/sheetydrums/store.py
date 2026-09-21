@@ -335,9 +335,15 @@ def read_selections(video_id: str) -> list[dict[str, Any]]:
 
 def append_version(video_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
     """Append an immutable version snapshot to the append-only version log.
-    Write-only in Phase 2 (nothing reads it back yet) — it is the audit trail the
-    Phase 3 parameter search will score against. Returns the stored record."""
+    Each snapshot captures a recoverable base state (see server `_snapshot`);
+    it's the audit trail for revert and, later, the Phase 3 param search.
+    Returns the stored record."""
     return append_event(video_id, "versions", snapshot)
+
+
+def read_versions(video_id: str) -> list[dict[str, Any]]:
+    """Read a project's version snapshots in append (oldest-first) order."""
+    return read_events(video_id, "versions")
 
 
 def delete_project(video_id: str) -> bool:

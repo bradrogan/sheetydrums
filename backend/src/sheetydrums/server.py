@@ -19,6 +19,8 @@ via `store.py`, keyed by video id. Endpoints:
   PUT    /projects/{id}/selections/{sid}   → edit a verified selection
   DELETE /projects/{id}/selections/{sid}   → undo a verified selection
   DELETE /projects/{id}/system             → clear the system pass (user edits untouched)
+  GET    /projects/{id}/versions           → base snapshots (revert list, oldest first)
+  POST   /projects/{id}/revert  {version_id} → restore a base snapshot (re-tune safety net)
   DELETE /projects/{id}                    → remove
   GET    /settings                         → projects-dir settings
   PUT    /settings   {projects_dir, move_existing?} → change projects dir (opt. move files)
@@ -257,6 +259,7 @@ def _run_job(job: JobState, url: str, use_drumsep: bool) -> None:
                 "params": params.to_dict(),
             }
         )
+        _snapshot(project, "original")  # so a re-tune can always revert to this
         job.result = project
         n_notes = sum(len(b["notes"]) for b in notation["bars"])
         on_progress(f"done: {n_notes} notes / {len(notation['bars'])} bars")
@@ -471,6 +474,21 @@ def _load_or_404(video_id: str) -> dict[str, Any]:
     return project
 
 
+def _snapshot(project: dict[str, Any], label: str) -> dict[str, Any]:
+    """Append an immutable, recoverable snapshot of a project's base state
+    (base notation + params + user layer) to its version log. Written on
+    transcribe ("original") and before every base change, so a re-tune is never
+    a one-way door — see POST /revert."""
+    rec = {
+        "version_id": "ver_" + uuid.uuid4().hex,
+        "label": label,
+        "base": project.get("notation"),
+        "params": project.get("params"),
+        "selections": project.get("selections") or [],
+    }
+    return store.append_version(project["video_id"], rec)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -613,6 +631,11 @@ async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[
     # region/fingerprint must be re-checked) and clear the system pass, which a
     # re-generation invalidates. `keep_edits` picks the policy; conflicts are
     # returned for the client's review panel. See docs/design/phase2-plan.md §2f.
+    # A retune-accept replaces the base — snapshot the outgoing state first, so a
+    # re-tune can always be reverted (the safety net against making it worse).
+    if body.get("layer") == "base":
+        _snapshot(existing, "before re-tune")
+
     conflicts: list[dict[str, Any]] = []
     if body.get("layer") == "base" and (
         existing.get("selections") or existing.get("system_layer") is not None
@@ -634,6 +657,56 @@ async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[
     except Exception as exc:
         raise HTTPException(400, f"Invalid notation: {exc}") from exc
     return {**project, "conflicts": conflicts}
+
+
+@app.get("/projects/{video_id}/versions")
+async def list_versions(video_id: str) -> dict[str, Any]:
+    """Base snapshots for the revert UI — oldest ("original") first. Metadata
+    only; the full base is read on revert."""
+    _load_or_404(video_id)
+    versions: list[dict[str, Any]] = []
+    for v in store.read_versions(video_id):
+        base = v.get("base") or {}
+        versions.append({
+            "version_id": v.get("version_id"),
+            "label": v.get("label"),
+            "created_at": v.get("at"),
+            "tempo_bpm": base.get("tempo_bpm"),
+            "n_bars": len(base.get("bars") or []),
+            "n_selections": len(v.get("selections") or []),
+        })
+    return {"versions": versions}
+
+
+class RevertRequest(BaseModel):
+    version_id: str
+
+
+@app.post("/projects/{video_id}/revert")
+async def revert_version(video_id: str, req: RevertRequest = Body(...)) -> dict[str, Any]:
+    """Restore a base snapshot (base + params + user layer). Snapshots the
+    current state first ("before revert"), so a revert is itself undoable — no
+    tuning experiment can leave the project stuck below where it started."""
+    project = _load_or_404(video_id)
+    target = next(
+        (v for v in store.read_versions(video_id) if v.get("version_id") == req.version_id),
+        None,
+    )
+    if target is None:
+        raise HTTPException(404, f"No version {req.version_id!r}")
+    _snapshot(project, "before revert")
+    restored: dict[str, Any] = {
+        **project,
+        "notation": target["base"],
+        "selections": target.get("selections") or [],
+        "system_layer": None,
+    }
+    if target.get("params") is not None:
+        restored["params"] = target["params"]
+    try:
+        return store.save_project(restored)
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid version snapshot: {exc}") from exc
 
 
 class RetuneRequest(BaseModel):
