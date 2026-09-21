@@ -22,6 +22,11 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Callable
 
+# The bipartite matcher + P/R/F1 now live in the package so the Phase 3 param
+# search reuses the exact same scorer (docs/design/phase3-plan.md §3a). Behaviour
+# is unchanged here — the eval scripts still pass sixteenth-int positions.
+from sheetydrums.matching import bipartite_match, stats
+
 
 # === Per-line, per-char mapping to schema instruments ====================
 # Lowercase 'x' on the H line is a closed hat; uppercase 'X' is an open hat.
@@ -122,22 +127,6 @@ def collapse_tab_hits(bar: dict[str, set[int]], scored: list[str], collapse_cras
 
 # === DP alignment ========================================================
 
-def bipartite_match(t_pos, p_pos, tolerance: int) -> tuple[int, set[int], set[int]]:
-    matched = 0
-    used_t: set[int] = set()
-    used_p: set[int] = set()
-    for pi in sorted(p_pos):
-        for ti in sorted(t_pos):
-            if ti in used_t:
-                continue
-            if abs(pi - ti) <= tolerance:
-                matched += 1
-                used_t.add(ti)
-                used_p.add(pi)
-                break
-    return matched, used_t, used_p
-
-
 def bar_match_score(tab_bar, pl_bar, scored: list[str], tolerance: int) -> float:
     matched = 0
     tab_total = 0
@@ -194,13 +183,6 @@ def align(tab_bars, pl_bars, scored: list[str], tolerance: int) -> list[tuple[in
 
 
 # === Scoring + reporting =================================================
-
-def stats(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
-    p = tp / (tp + fp) if tp + fp else 0.0
-    r = tp / (tp + fn) if tp + fn else 0.0
-    f = 2 * p * r / (p + r) if (p + r) else 0.0
-    return p, r, f
-
 
 def aggregate(pairs, tab_bars, pl_bars, scored: list[str], tolerance: int):
     per: dict[str, list[int]] = {inst: [0, 0, 0] for inst in scored}  # tp, fp, fn
