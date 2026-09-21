@@ -6,6 +6,21 @@
  */
 
 /**
+ * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+ */
+export type Instrument =
+  | "kick"
+  | "snare"
+  | "hihat_closed"
+  | "hihat_open"
+  | "hihat_chick"
+  | "ride"
+  | "crash"
+  | "tom_high"
+  | "tom_mid"
+  | "tom_low";
+
+/**
  * Contract between the Python pipeline (producer) and the web renderer (consumer). Expect to revise after the walking skeleton transcribes its first real song.
  */
 export interface DrumTranscriptionEventsV1Draft {
@@ -33,20 +48,7 @@ export interface DrumTranscriptionEventsV1Draft {
   }[];
 }
 export interface Note {
-  /**
-   * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
-   */
-  instrument:
-    | "kick"
-    | "snare"
-    | "hihat_closed"
-    | "hihat_open"
-    | "hihat_chick"
-    | "ride"
-    | "crash"
-    | "tom_high"
-    | "tom_mid"
-    | "tom_low";
+  instrument: Instrument;
   /**
    * Position within the bar as a fraction of a whole note from the bar's downbeat. '0' = downbeat, '1/4' = beat 2 in 4/4, '1/2' = beat 3, '3/4' = beat 4.
    */
@@ -76,6 +78,33 @@ export interface Note {
      */
     group: string;
   };
+  /**
+   * Optional grace note attached to (struck just before) this primary note. Absent = an ordinary note. A flam is a same-instrument slashed grace note. The grace has no independent quantized timing — its micro-offset before the primary is a rendering convention, not data — so it is attached to the primary rather than being a separate note event. NOT produced by the pipeline; arrives only via manual editing.
+   */
+  grace?: {
+    /**
+     * Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again.
+     */
+    instrument:
+      | "kick"
+      | "snare"
+      | "hihat_closed"
+      | "hihat_open"
+      | "hihat_chick"
+      | "ride"
+      | "crash"
+      | "tom_high"
+      | "tom_mid"
+      | "tom_low";
+    /**
+     * Whether the grace note renders with the conventional slash through its stem (the flam convention). Defaults to true (a flam) when absent; set false for an unslashed grace note.
+     */
+    slashed?: boolean;
+  };
+  /**
+   * Whether this hit is a ghost note — a soft/muted stroke, rendered with parentheses around the notehead. Notation-only; NOT produced by the pipeline (it arrives via manual editing). Meaningful mainly on snare and toms.
+   */
+  ghost?: boolean;
   /**
    * Classifier confidence. Useful for filtering or highlighting uncertain hits in the UI.
    */

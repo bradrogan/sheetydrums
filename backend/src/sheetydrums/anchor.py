@@ -73,9 +73,11 @@ def region_fingerprint(
 
     Positions are canonicalized so a re-spelling ('0' -> '0/1') is not mistaken
     for drift, and `tuplet` is included so a re-grouped bracket — same positions
-    and durations, different bracket — is not mistaken for no change. `confidence`
-    is deliberately excluded: it moves on every re-run without changing the
-    notation the user verified."""
+    and durations, different bracket — is not mistaken for no change. `grace`
+    and `ghost` are included so a flam/ghost added to or removed from the base
+    under a verified region registers as drift (the toggle writes the base
+    pre-Phase-2). `confidence` is deliberately excluded: it moves on every re-run
+    without changing the notation the user verified."""
     items: list[list[Any]] = []
     for bar in notation["bars"]:
         if bar_start <= bar["index"] <= bar_end:
@@ -89,6 +91,8 @@ def region_fingerprint(
                         n.get("duration"),
                         canonical_position(sustain) if sustain is not None else None,
                         n.get("tuplet"),
+                        n.get("grace"),
+                        n.get("ghost"),
                     ])
     # Sort on the serialized item so the order is total: two notes agreeing on
     # bar/position/instrument would otherwise fall back on the base's own list
@@ -169,9 +173,10 @@ def _frozen_lookup(frozen_notes: list[dict[str, Any]]) -> dict[tuple[int, str], 
 def _restore_attributes(
     note: dict[str, Any], bar: int, frozen: dict[tuple[int, str], list[dict[str, Any]]], tol: Fraction
 ) -> None:
-    """Overlay a matching frozen note's full attributes (duration, sustain_until)
-    onto an applied note — so e.g. a reclassify to hihat_open restores the sustain
-    the user set on the frozen ground truth."""
+    """Overlay a matching frozen note's full attributes (duration, sustain_until,
+    grace, ghost) onto an applied note — so e.g. a reclassify to hihat_open
+    restores the sustain, and a reclassify on a flammed/ghosted note keeps the
+    user's flam/ghost."""
     match = find_note(frozen.get((bar, note["instrument"]), []), note["position"], note["instrument"], tol)
     if match is None:
         return
@@ -181,6 +186,11 @@ def _restore_attributes(
         note["sustain_until"] = match["sustain_until"]
     elif "sustain_until" in note:
         del note["sustain_until"]
+    for attr in ("grace", "ghost"):
+        if attr in match:
+            note[attr] = match[attr]
+        elif attr in note:
+            del note[attr]
 
 
 def replay_ops(

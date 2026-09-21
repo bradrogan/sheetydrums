@@ -241,9 +241,16 @@ export function setupEditing(ctx: EditContext): EditHandle {
 
   const commit = async (): Promise<boolean> => {
     const input = sel.toInput(notation);
-    let created: api.Selection;
+    // Editing an already-verified region updates it in place (PUT); a brand-new
+    // region creates one (POST). Creating a second selection over the same
+    // lane×bar is rejected by the backend's no-overlap invariant — which is what
+    // the update path exists to avoid.
+    const editingId = sel.editingId;
+    let saved_sel: api.Selection;
     try {
-      created = await api.createSelection(videoId, input);
+      saved_sel = editingId
+        ? await api.updateSelection(videoId, editingId, input)
+        : await api.createSelection(videoId, input);
     } catch (err) {
       alert(`Couldn't save selection: ${err instanceof Error ? err.message : String(err)}`);
       return false;
@@ -252,7 +259,11 @@ export function setupEditing(ctx: EditContext): EditHandle {
     // already shows the edited notes (edits mutate `notation`, which the server
     // just froze verbatim), so committing only flips the draft band (dashed) to
     // a verified band (solid) where the user is already looking.
-    persisted.push(created);
+    const existingIdx = editingId
+      ? persisted.findIndex((s) => s.selection_id === editingId)
+      : -1;
+    if (existingIdx >= 0) persisted[existingIdx] = saved_sel;
+    else persisted.push(saved_sel);
     sel.clear();
     hideToolbar();
     editSession.dirty = false;
@@ -277,6 +288,32 @@ export function setupEditing(ctx: EditContext): EditHandle {
       sel.begin(lane, bar);
       redrawBands();
     }
+  };
+
+  // The persisted selection that already owns (lane, bar), if any.
+  const coveringSelection = (lane: LaneKey, bar: number): api.Selection | undefined =>
+    persisted.find((s) => s.lane === lane && s.bar_start <= bar && bar <= s.bar_end);
+
+  // Load an already-verified selection into the draft for further editing, so a
+  // commit updates it (PUT) rather than creating an overlapping second selection.
+  // Mirrors startDraft's discard-of-uncommitted-edits before switching.
+  const editExisting = (existing: api.Selection): void => {
+    if (sel.hasEdits) {
+      notation.bars = structuredClone(saved).bars;
+      sel.edit(existing);
+      rerenderAll(true);
+    } else {
+      sel.edit(existing);
+      redrawBands();
+    }
+  };
+
+  // Enter the right draft for a click/tap at (lane, bar): edit the covering
+  // verified selection if there is one, else start a fresh draft.
+  const enterDraftAt = (lane: LaneKey, bar: number): void => {
+    const existing = coveringSelection(lane, bar);
+    if (existing) editExisting(existing);
+    else startDraft(lane, bar);
   };
 
   const enterEditMode = (): void => {
@@ -369,7 +406,7 @@ export function setupEditing(ctx: EditContext): EditHandle {
     const inDraft =
       r !== null && r.lane === lane && r.barStart <= barView.index && barView.index <= r.barEnd;
     if (!inDraft) {
-      startDraft(lane, barView.index);
+      enterDraftAt(lane, barView.index); // edits the covering verified selection if there is one
       showToolbar();
     }
     const active = sel.region();
@@ -380,6 +417,7 @@ export function setupEditing(ctx: EditContext): EditHandle {
       lane: active.lane,
       regions: persisted,
       recordOp: (op) => { sel.recordOp(op); markDirty(); },
+      markEdited: () => { sel.markEdited(); markDirty(); },
       afterRedraw: redrawBands,
     });
   };
@@ -598,6 +636,8 @@ interface ColumnPopoverArgs {
   regions: api.Selection[];
   /** Record an edit op into the active draft selection. */
   recordOp: (op: Op) => void;
+  /** Flag a non-op edit (flam toggle) so the draft counts as edited. */
+  markEdited: () => void;
   /** Re-apply selection bands after the bar is redrawn (drawBar wipes them). */
   afterRedraw: () => void;
 }
@@ -611,7 +651,7 @@ function laneGlyph(lane: Lane, note: NoteObj | undefined): string {
 
 function openColumnPopover(args: ColumnPopoverArgs): void {
   closePopover();
-  const { bar, barView, sixteenth, maxSixteenth, numerator, lane, regions, recordOp, afterRedraw } = args;
+  const { bar, barView, sixteenth, maxSixteenth, numerator, lane, regions, recordOp, markEdited, afterRedraw } = args;
   const position = formatPosition(sixteenth);
 
   const box = document.createElement('div');
@@ -649,6 +689,24 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
       const from = note.instrument;
       note.instrument = inst;
       recordOp({ kind: 'reclassify', bar: bar.index, position: note.position, from, to: inst });
+    });
+  // Two independent notation ornaments on a present stroke, snare + toms only
+  // (gated at the call site). Both live on the note itself — no op, no new note
+  // in the sequence — so they're frozen into the selection's notes on Verify
+  // (see SelectionController.markEdited) and drawn by render's attach helpers.
+  //   flam  → a same-instrument slashed grace note tucked before the hit
+  //   ghost → the hit's notehead wrapped in parentheses (a soft/muted stroke)
+  const toggleFlam = (note: NoteObj): void =>
+    mutate(() => {
+      if (note.grace) delete note.grace;
+      else note.grace = { instrument: note.instrument, slashed: true };
+      markEdited();
+    });
+  const toggleGhost = (note: NoteObj): void =>
+    mutate(() => {
+      if (note.ghost) delete note.ghost;
+      else note.ghost = true;
+      markEdited();
     });
 
   // Toggle a lane on/off at this column (hi-hat turns on as closed by default;
@@ -708,6 +766,28 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
         };
         mk('x', 'hihat_closed', 'Closed hi-hat');
         mk('o', 'hihat_open', 'Open hi-hat');
+        row.appendChild(seg);
+      }
+
+      // Flam / ghost ornaments — snare + toms only (these are played on those
+      // drums; scope the affordance to them). Two independent toggles: flam (a
+      // slashed grace note) and ghost (parenthesized soft hit). Shown only for a
+      // present stroke, since both notate an existing hit.
+      const ornamentable = laneRow.key === 'snare' || laneRow.key.startsWith('tom_');
+      if (note && ornamentable) {
+        const seg = document.createElement('div');
+        seg.className = 'col-variant col-ornament';
+        const mkg = (label: string, active: boolean, onClick: () => void, title: string): void => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = label;
+          b.title = title;
+          if (active) b.className = 'active';
+          b.onclick = onClick;
+          seg.appendChild(b);
+        };
+        mkg('flam', !!note.grace, () => toggleFlam(note), 'Flam — slashed grace note (click to toggle)');
+        mkg('ghost', !!note.ghost, () => toggleGhost(note), 'Ghost note — soft hit in parentheses (click to toggle)');
         row.appendChild(seg);
       }
 

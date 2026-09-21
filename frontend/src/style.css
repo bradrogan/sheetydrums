@@ -682,6 +682,18 @@ button#edit-toggle.active {
   color: #04121a;
 }
 
+/* Flam / grace ornament segment (snare + toms). Reuses .col-variant's segmented
+   look but with auto-width buttons so the 'flam' / 'grace' labels fit. */
+.col-ornament {
+  margin-left: 0.3rem;
+  margin-right: 0;
+}
+.col-ornament button {
+  width: auto;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.72rem;
+}
+
 .edit-col-highlight {
   position: absolute;
   top: 0;

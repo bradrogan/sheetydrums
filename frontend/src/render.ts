@@ -4,6 +4,7 @@
 // Aliased to `InvisibleRest` so our code never conflates the two.
 import {
   Renderer, Stave, StaveNote, Voice, Formatter, Stem, Beam, Tuplet, Dot,
+  GraceNote, GraceNoteGroup, Parenthesis, Modifier,
   GhostNote as InvisibleRest,
 } from 'vexflow';
 import type { DrumTranscriptionEventsV1Draft, Note } from './generated/events';
@@ -111,6 +112,12 @@ export const BAR_SVG_HEIGHT = 140;
 const STAVE_X = 0;
 const STAVE_Y = 30;
 const STAVE_WIDTH = 800;
+// Room to tuck a leading note's left-side ornament inside the bar (grace notes
+// and left parentheses draw to the LEFT of the principal; at the bar's left edge
+// they'd otherwise spill past the barline into the previous bar). A flam's grace
+// note is wider than a parenthesis.
+const GRACE_INSET_PX = 13;
+const PAREN_INSET_PX = 8;
 
 /** One rendered note's geometry, keyed to its position in the bar. */
 export interface NoteView {
@@ -336,6 +343,7 @@ export function drawBar(
     voice.addTickables(tickables);
     const beams = beamGroups.map((group) => new Beam(group));
     new Formatter().joinVoices([voice]).format([voice], STAVE_WIDTH - 80);
+    insetLeadingOrnament(noteColumns.map((c) => c.note), barView.contentX0);
     voice.draw(ctx, stave);
     for (const beam of beams) beam.setContext(ctx).draw();
     for (const col of noteColumns) {
@@ -370,6 +378,7 @@ export function drawBar(
   const beams = beamGroups.map((group) => new Beam(group));
 
   new Formatter().joinVoices([voice]).format([voice], STAVE_WIDTH - 80);
+  insetLeadingOrnament(staveNotes, barView.contentX0);
   voice.draw(ctx, stave);
 
   for (const beam of beams) {
@@ -438,11 +447,14 @@ function drawGridBar(
   const beams = beamGroups.map((group) => new Beam(group));
   new Formatter().joinVoices([voice]).format([voice], STAVE_WIDTH - 80);
 
-  // Override the formatter's proportional x with the fixed grid slot x.
+  // Override the formatter's proportional x with the fixed grid slot x. Shift
+  // the TickContext (not x_shift) so each note's grace/parenthesis modifiers move
+  // with it — see shiftNoteX.
   for (let i = 0; i < staveNotes.length; i++) {
     const slot = Math.round(positions[i]!.value * 16);
-    staveNotes[i]!.setXShift(gridX(slot) - staveNotes[i]!.getAbsoluteX());
+    shiftNoteX(staveNotes[i]!, gridX(slot) - staveNotes[i]!.getAbsoluteX());
   }
+  insetLeadingOrnament(staveNotes, barView.contentX0);
 
   voice.draw(ctx, stave);
   for (const beam of beams) beam.setContext(ctx).draw();
@@ -587,6 +599,8 @@ function buildBarVoice(
       const note = new StaveNote({ keys: hits.map(keyForHit), duration: code });
       note.setStemDirection(Stem.UP);
       if (code.includes('d')) Dot.buildAndAttach([note], { all: true });
+      attachGrace(note, hits);
+      attachGhost(note, hits);
       tickables.push(note);
       noteColumns.push({ note, position: s / 16, instrument: hits[0]!.instrument });
       cursor = s + dur16;
@@ -700,6 +714,8 @@ function buildStaveNotes(
     // Edit-mode delta coloring: tint verified (user) noteheads. No-op unless
     // `regions` is passed (i.e. only in the grid/edit render path).
     colorByOrigin(staveNote, hits, barIndex, regions);
+    attachGrace(staveNote, hits);
+    attachGhost(staveNote, hits);
     staveNotes.push(staveNote);
     positions.push({ value: parsePosition(pos), instrument: hits[0]!.instrument });
     durations.push(duration);
@@ -777,6 +793,79 @@ function keyForHit(hit: Note): string {
   // The suffix picks a non-default notehead glyph (X for cymbals/closed hats,
   // circled-X for open hats); '' leaves the default filled oval.
   return `${mapping.key}${NOTEHEAD_SUFFIX[mapping.notehead]}`;
+}
+
+/**
+ * Attach a VexFlow grace-note group to a column's StaveNote for any hits that
+ * carry a `grace` (flams and grace notes generally; see
+ * docs/design/grace-notes-flams.md). No-op when none do. The grace takes its
+ * own instrument's staff line + notehead (usually the same as the primary), is
+ * an 8th-value by convention, and draws the flam slash unless `slashed` is
+ * explicitly false. Grace notes are modifiers, not tickables, so they don't add
+ * a noteColumn — playhead geometry stays keyed on the primary note's position.
+ */
+function attachGrace(note: StaveNote, hits: readonly Note[]): void {
+  const graced = hits.filter((h) => h.grace);
+  if (graced.length === 0) return;
+  const graceNotes = graced.map((h) => {
+    const g = h.grace!;
+    return new GraceNote({
+      keys: [keyForHit({ ...h, instrument: g.instrument })],
+      duration: '8',
+      slash: g.slashed !== false, // default (absent) = a flam's slash
+    });
+  });
+  note.addModifier(new GraceNoteGroup(graceNotes, false), 0);
+}
+
+/**
+ * Wrap the notehead(s) of any ghost hits in parentheses (the soft-hit
+ * convention; see docs/design/grace-notes-flams.md). A column's StaveNote can be
+ * a chord (one key per hit, in `hits` order), so parenthesize per-notehead at
+ * the ghost hit's key index — not the whole note — so a ghost snare sharing a
+ * beat with a normal hi-hat doesn't parenthesize the hi-hat too.
+ */
+function attachGhost(note: StaveNote, hits: readonly Note[]): void {
+  hits.forEach((h, i) => {
+    if (!h.ghost) return;
+    note.addModifier(new Parenthesis(Modifier.Position.LEFT), i);
+    note.addModifier(new Parenthesis(Modifier.Position.RIGHT), i);
+  });
+}
+
+/**
+ * Move a note — and its left/right modifiers (grace notes, parentheses) — by
+ * `dx` px. Shifts the note's TickContext, NOT its `x_shift`: `getAbsoluteX()`
+ * (the notehead) and the modifier anchors (which read the TickContext x directly
+ * via `alignSubNotesWithNote` / `getModifierStartXY`) both derive from the
+ * TickContext x, so they travel together. `setXShift` moves only the notehead,
+ * which strands a flam/parenthesis at the formatter's original x — a beat back
+ * in grid mode, where we reposition every note. Each note owns its TickContext
+ * (one per tick), so this doesn't disturb the others.
+ */
+function shiftNoteX(note: StaveNote, dx: number): void {
+  const tc = note.getTickContext();
+  tc.setXOffset(tc.getXOffset() + dx);
+}
+
+/**
+ * Keep a bar's leading note's left-side ornament inside the bar. Grace notes and
+ * left parentheses draw to the left of their principal, so on the first
+ * (leftmost) note they spill past the left barline into the adjacent previous
+ * bar. Nudge that note right just enough to clear `contentX0`. No-op when the
+ * leading note has no such ornament or already sits far enough in. Call after
+ * formatting (and after any grid x positioning), before `voice.draw`. `notes`
+ * must be in left-to-right order.
+ */
+function insetLeadingOrnament(notes: StaveNote[], contentX0: number): void {
+  const first = notes[0];
+  if (!first) return;
+  const mods = first.getModifiers();
+  const hasGrace = mods.some((m) => m instanceof GraceNoteGroup);
+  const hasParen = mods.some((m) => m instanceof Parenthesis);
+  if (!hasGrace && !hasParen) return;
+  const need = contentX0 + (hasGrace ? GRACE_INSET_PX : PAREN_INSET_PX) - first.getAbsoluteX();
+  if (need > 0) shiftNoteX(first, need);
 }
 
 export function parsePosition(p: string): number {
