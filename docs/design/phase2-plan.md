@@ -15,6 +15,29 @@ Phases 0/1 made re-runs cheap and gave a human a manual "tweak a knob → re-run
 3. **Q3 — Bar-relative anchoring on exact rational position + tolerance** (not rounded sixteenths). Grid-agnostic, so it survives future triplet/tuplet detection. Time-based anchoring stays deferred; all anchor logic is isolated in `anchor.py` so a later swap is one file.
 4. **Q4 — Retune default = replay-with-conflict-review**, with all three modes (`replay-all`, `replay-with-conflict-review`, `take-fresh-clean`) offered per run. **Conflicts are auditionable** — each conflict in the review panel drives the existing drums-only playback + loop-region so the user confirms by ear before keep-reposition / discard.
 5. **Q5 — Write immutable version snapshots now** (write-only; no reader/UI until Phase 3/5). It's the audit trail Phase 3's param search scores against; skipping it means starting Phase 3 blind.
+6. **Q6 — One unified edit-session Save/Discard** (decided 2026-09-20, **revises the immediate-persist flow of 2c/2d**). Edit mode is a *session*: every change — verifying a selection, removing one, accepting a re-tune preview — mutates an in-memory working copy only. A single top-level **Save** persists the whole session; **Discard** reverts it to the entry snapshot. Nothing hits the server per action, and the re-tune's Accept/Discard leaves the tuning menu (the tuning menu only *re-runs*). See "Unified edit session" below.
+
+---
+
+## Unified edit session (Q6) — revises 2c/2d
+
+**Why.** 2c/2d persist each action immediately (Verify → `POST /selections`, Remove → `DELETE`, retune accept → `PUT` base) and the tuning preview renders straight to the score, bypassing the edit layer. That split surfaced real bugs: a re-tune preview could be stranded un-discardably, its highlight leaked into view mode, and verified sections looked "overwritten" during preview. The user wants one obvious Save/Discard governing everything in edit mode.
+
+**Model.**
+- **Enter edit** snapshots `{base, selections, effective}`. All subsequent edits mutate in-memory working copies; **no server calls**.
+  - Verify a draft → append to the working selection list (marks the session dirty).
+  - Remove a selection → drop it from the working list + revert its region to base.
+  - Re-tune → the preview folds into the session as a new working **base**; the working effective is recomposed client-side (`applySelections(base, selections)` — the user-layer step of `compose`, ported to TS; Phase 2 has no system layer).
+- **Save** (top-level, in the edit hub) persists the whole session atomically: one call sending the working `base` (unchanged unless re-tuned) + the full working selection list. Backend replaces both (extend `PUT /projects/{id}` to accept a `selections` list, or a dedicated save endpoint) and clears the system pass. Clears dirty.
+- **Discard** (top-level) reverts the working copies to the entry snapshot, in place (no reload) — since nothing was persisted, the server state is already correct. Clears dirty.
+- Leaving edit mode (Done / Back) with a dirty session routes through Save/Discard/Cancel.
+
+**Consequences / what changes from 2c/2d.**
+- `POST`/`DELETE /selections` are no longer called per action by the editor; the session Save replaces the whole user layer at once. (The endpoints can stay for other callers / tests.)
+- The retune-accept `PUT` merges into the session Save; `reconcile_selections` (§2f) still runs on that Save to re-anchor selections against the re-tuned base and surface conflicts.
+- The tuning preview must render **through the edit layer** (working effective, with bands + delta coloring), not a detached `renderScore`, which is also what the delta-preview note (block 6 in `ai-tuning-loop.md`) requires — so this and the per-note delta view are the same integration.
+
+**Interim.** Until this lands, the editor keeps immediate-persist; the tuning preview locks its knobs while pending so it can't be stranded (a stopgap, not the fix).
 
 ---
 
