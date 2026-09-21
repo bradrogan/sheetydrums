@@ -11,9 +11,10 @@ via `store.py`, keyed by video id. Endpoints:
                                               origin_map} (origin_map keyed by bar-index string)
   GET    /projects/{id}/diagnose           → diagnostics on the effective notation
   POST   /projects/{id}/retune  {params}   → re-run with new params, stream a preview (job)
-  PUT    /projects/{id}          {notation,params?,layer?} → save BASE notation
+  PUT    /projects/{id}          {notation,params?,layer?,keep_edits?} → save BASE notation
                                               (retune-accept path; needs layer="base" once
-                                              the project has layers — see the handler)
+                                              the project has layers; re-anchors the user layer
+                                              & returns {conflicts} — see the handler)
   POST   /projects/{id}/selections {lane,bar_start,bar_end,notes,ops} → create a verified selection
   PUT    /projects/{id}/selections/{sid}   → edit a verified selection
   DELETE /projects/{id}/selections/{sid}   → undo a verified selection
@@ -606,11 +607,33 @@ async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[
     # Accepting a re-tune preview also persists the params that produced it.
     if body.get("params") is not None:
         to_save["params"] = body["params"]
+
+    # Retune accept: the user layer was anchored to the OLD base, so re-anchor it
+    # to the new one (a selection's frozen notes still win at compose, but its
+    # region/fingerprint must be re-checked) and clear the system pass, which a
+    # re-generation invalidates. `keep_edits` picks the policy; conflicts are
+    # returned for the client's review panel. See docs/design/phase2-plan.md §2f.
+    conflicts: list[dict[str, Any]] = []
+    if body.get("layer") == "base" and (
+        existing.get("selections") or existing.get("system_layer") is not None
+    ):
+        from sheetydrums.layering import reconcile_selections
+
+        keep_edits = body.get("keep_edits", "replay-with-conflict-review")
+        try:
+            kept, conflicts = reconcile_selections(
+                existing.get("selections") or [], notation, keep_edits
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        to_save["selections"] = kept
+        to_save["system_layer"] = None
+
     try:
         project = store.save_project(to_save)
     except Exception as exc:
         raise HTTPException(400, f"Invalid notation: {exc}") from exc
-    return project
+    return {**project, "conflicts": conflicts}
 
 
 class RetuneRequest(BaseModel):

@@ -14,7 +14,15 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from sheetydrums.anchor import DEFAULT_TOL, find_note, lane_of, parse_position
+from sheetydrums.anchor import (
+    DEFAULT_TOL,
+    find_note,
+    lane_of,
+    parse_position,
+    region_fingerprint,
+    region_status,
+    replay_ops,
+)
 from sheetydrums.validate import check_selection_invariants, validate
 
 
@@ -171,3 +179,75 @@ def compose(
     if regions or system_ops:
         validate(result)
     return result, origin_map
+
+
+# === Retune reconciliation (accepting a re-generated base) ==============
+
+_KEEP_EDITS_MODES = frozenset({"replay-all", "replay-with-conflict-review", "take-fresh-clean"})
+
+
+def reconcile_selections(
+    selections: list[dict[str, Any]],
+    new_base: dict[str, Any],
+    keep_edits: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Reconcile the user layer with a regenerated base (the retune-accept path).
+
+    A verified selection is anchored to the base it was made against; when a
+    retune replaces the base, each selection has to be re-checked. The frozen
+    notes remain the user's ground truth (they still win at compose), so a
+    selection is *kept* as long as its region still exists — only its
+    base_fingerprint is re-pinned to the new base. Returns (kept, conflicts).
+
+    `keep_edits`:
+      - ``take-fresh-clean``: drop every selection (a clean slate).
+      - ``replay-all``: keep every selection whose region survives (re-pinned);
+        silently drop any whose bars no longer exist; surface no conflicts.
+      - ``replay-with-conflict-review``: same keep/drop, but return the conflicts
+        — region *missing* (bars gone), region *drifted* (the base under the
+        region changed, so the user should re-check), and *op* (a recorded edit's
+        anchor no longer maps) — for the user to audition and resolve.
+    """
+    if keep_edits not in _KEEP_EDITS_MODES:
+        raise ValueError(f"Unknown keep_edits mode: {keep_edits!r}")
+    if keep_edits == "take-fresh-clean":
+        return [], []
+
+    review = keep_edits == "replay-with-conflict-review"
+    kept: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
+
+    def region_conflict(sel: dict[str, Any], reason: str) -> dict[str, Any]:
+        return {
+            "kind": "region", "reason": reason,
+            "selection_id": sel.get("selection_id"), "lane": sel["lane"],
+            "bar_start": sel["bar_start"], "bar_end": sel["bar_end"],
+        }
+
+    for sel in selections:
+        status = region_status(sel, new_base)
+        if status == "missing":
+            # The region's bars no longer all exist — nothing to anchor to, so
+            # the selection is dropped in every mode; review surfaces it.
+            if review:
+                conflicts.append(region_conflict(sel, "missing"))
+            continue
+
+        kept.append({
+            **sel,
+            "base_fingerprint": region_fingerprint(
+                new_base, sel["lane"], sel["bar_start"], sel["bar_end"]
+            ),
+        })
+        if review:
+            if status == "drifted":
+                conflicts.append(region_conflict(sel, "drifted"))
+            _, op_conflicts = replay_ops(new_base, sel.get("ops", []), sel.get("notes", []))
+            for oc in op_conflicts:
+                conflicts.append({
+                    "kind": "op", "reason": oc["reason"],
+                    "selection_id": sel.get("selection_id"),
+                    "bar": oc["op"]["bar"], "op": oc["op"],
+                })
+
+    return kept, conflicts
