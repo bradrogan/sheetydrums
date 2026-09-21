@@ -151,3 +151,44 @@ def test_accept_without_layer_flag_409s_on_layered_project(tmp_store: Any) -> No
     with pytest.raises(HTTPException) as ei:
         _accept({"notation": _notation(4)})  # no layer:"base" on a layered project
     assert ei.value.status_code == 409
+
+
+# === unified edit-session Save (body carries the full selections list) ===
+
+def test_save_replaces_user_layer_from_body(tmp_store: Any) -> None:
+    # The fixture project has one hihat selection (bars 1–2). A unified Save sends
+    # a DIFFERENT working list (a snare selection); it must replace, not merge.
+    snare = _sel(sid="sel_snare", lane="snare", bs=3, be=3, ops=[])
+    snare["notes"] = [{"bar": 3, "note": {"instrument": "snare", "position": "1/4", "duration": "1/8"}}]
+    res = _accept({"notation": _notation(4), "layer": "base", "selections": [snare],
+                   "keep_edits": "replay-all"})
+    ids = [s["selection_id"] for s in res["selections"]]
+    assert ids == ["sel_snare"]  # replaced, not merged with the fixture's hihat sel
+    assert res["system_layer"] is None
+    stored = store.load_project(VID)
+    assert stored is not None and [s["selection_id"] for s in stored["selections"]] == ["sel_snare"]
+
+
+def test_save_empty_selections_clears_user_layer(tmp_store: Any) -> None:
+    res = _accept({"notation": _notation(4), "layer": "base", "selections": []})
+    assert res["selections"] == []
+    stored = store.load_project(VID)
+    assert stored is not None and stored.get("selections") == []
+
+
+def test_save_reconciles_body_selections_against_new_base(tmp_store: Any) -> None:
+    # A working selection whose region is past a shortened new base is dropped +
+    # reported, just like the retune-accept path.
+    res = _accept({"notation": _notation(2), "layer": "base",
+                   "selections": [_sel(sid="sel_x", lane="hihat", bs=4, be=5, ops=[])],
+                   "keep_edits": "replay-with-conflict-review"})
+    assert res["selections"] == []
+    assert any(c["reason"] == "missing" for c in res["conflicts"])
+
+
+def test_save_invalid_body_selection_400(tmp_store: Any) -> None:
+    bad = _sel(sid="sel_bad", lane="hihat", bs=1, be=1, ops=[])
+    bad["notes"] = [{"bar": 1, "note": {"instrument": "cowbell", "position": "0", "duration": "1/8"}}]
+    with pytest.raises(HTTPException) as ei:
+        _accept({"notation": _notation(4), "layer": "base", "selections": [bad]})
+    assert ei.value.status_code == 400

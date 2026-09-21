@@ -11,10 +11,11 @@ via `store.py`, keyed by video id. Endpoints:
                                               origin_map} (origin_map keyed by bar-index string)
   GET    /projects/{id}/diagnose           → diagnostics on the effective notation
   POST   /projects/{id}/retune  {params}   → re-run with new params, stream a preview (job)
-  PUT    /projects/{id}          {notation,params?,layer?,keep_edits?} → save BASE notation
-                                              (retune-accept path; needs layer="base" once
-                                              the project has layers; re-anchors the user layer
-                                              & returns {conflicts} — see the handler)
+  PUT    /projects/{id}   {notation,params?,layer?,keep_edits?,selections?} → save BASE
+                                              (retune-accept; needs layer="base" once layered).
+                                              `selections` replaces the whole user layer
+                                              (unified edit-session Save); re-anchors it to the
+                                              new base & returns {conflicts} — see the handler
   POST   /projects/{id}/selections {lane,bar_start,bar_end,notes,ops} → create a verified selection
   PUT    /projects/{id}/selections/{sid}   → edit a verified selection
   DELETE /projects/{id}/selections/{sid}   → undo a verified selection
@@ -563,13 +564,15 @@ async def get_drumless(video_id: str) -> FileResponse:
 
 @app.put("/projects/{video_id}")
 async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Save BASE notation for an existing project — the retune-accept path.
+    """Save BASE notation (retune-accept) and, optionally, the whole user layer.
 
-    Body: {"notation": <events>, "params"?: {...}, "layer"?: "base"}. This
-    replaces the base layer (the generator output); user corrections live in the
-    user layer via the /selections endpoints and are preserved here untouched.
-    Validates before persisting; preserves the project's source + created_at +
-    selections.
+    Body: {"notation": <events>, "params"?, "layer"?: "base", "keep_edits"?,
+    "selections"?: [...]}. Replaces the base layer (the generator output). If
+    `selections` is given (the unified edit-session Save), it REPLACES the user
+    layer with that working list; otherwise the existing selections are kept. In
+    both cases the selections are re-anchored to the new base (§2f
+    reconcile_selections) and the system pass is cleared; conflicts are returned.
+    Validates before persisting; preserves the project's source + created_at.
 
     `notation` on a GET response is the *composed effective* layer, so PUTting
     that back would flatten the layers into the base. Once a project has any
@@ -608,23 +611,29 @@ async def save_project(video_id: str, body: dict[str, Any] = Body(...)) -> dict[
     if body.get("params") is not None:
         to_save["params"] = body["params"]
 
-    # Retune accept: the user layer was anchored to the OLD base, so re-anchor it
-    # to the new one (a selection's frozen notes still win at compose, but its
-    # region/fingerprint must be re-checked) and clear the system pass, which a
-    # re-generation invalidates. `keep_edits` picks the policy; conflicts are
-    # returned for the client's review panel. See docs/design/phase2-plan.md §2f.
+    # Re-anchor the user layer to the new base and clear the system pass (a
+    # re-generation invalidates it). Two callers:
+    #   - Unified edit-session Save (Q6): the client sends its full working
+    #     `selections` list to REPLACE the user layer.
+    #   - Retune-accept (§2f): no `selections` in the body, so the EXISTING ones
+    #     are re-anchored in place.
+    # Either way the (source) selections are reconciled against the new base — a
+    # selection's frozen notes still win at compose, but its region/fingerprint
+    # must be re-checked — and `keep_edits` picks the policy; conflicts are
+    # returned for the client's review panel.
     conflicts: list[dict[str, Any]] = []
-    if body.get("layer") == "base" and (
-        existing.get("selections") or existing.get("system_layer") is not None
-    ):
+    layered = existing.get("selections") or existing.get("system_layer") is not None
+    if body.get("layer") == "base" and (layered or body.get("selections") is not None):
         from sheetydrums.layering import reconcile_selections
 
         keep_edits = body.get("keep_edits", "replay-with-conflict-review")
+        source = (
+            body["selections"] if body.get("selections") is not None
+            else existing.get("selections") or []
+        )
         try:
-            kept, conflicts = reconcile_selections(
-                existing.get("selections") or [], notation, keep_edits
-            )
-        except ValueError as exc:
+            kept, conflicts = reconcile_selections(source, notation, keep_edits)
+        except (ValueError, KeyError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
         to_save["selections"] = kept
         to_save["system_layer"] = None
