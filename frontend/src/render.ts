@@ -182,6 +182,9 @@ function computeInstrumentYs(): Record<SchemaDrumClass, number> {
 export function renderScore(
   container: HTMLElement,
   events: DrumTranscriptionEventsV1Draft,
+  // Render in the fixed 16th grid (edit layout) rather than the proportional
+  // view — used for the tuning preview so classification changes are legible.
+  opts?: { grid?: boolean },
 ): RenderModel {
   container.innerHTML = '';
 
@@ -204,7 +207,7 @@ export function renderScore(
       i + 1 < bars.length ? bars[i + 1]!.start_seconds : startSeconds + barSeconds;
     const bv = makeBarView(bar.index, startSeconds, endSeconds, i === 0, tsLabel);
     container.appendChild(bv.row);
-    drawBar(bv, bar);
+    drawBar(bv, bar, opts?.grid ?? false);
     barViews.push(bv);
   }
   return { bars: barViews, instrumentYs: computeInstrumentYs() };

@@ -402,7 +402,18 @@ function setupTuningPanel(project: Project, events: Notation): void {
         project,
         notation: events,
         panel,
-        renderPreview: (n) => { renderScore(byId('score'), n); },
+        // Tuning is gated to edit mode (see edit.ts / CSS), so the score is in
+        // the grid layout — render the preview the same way so classification
+        // changes (open/closed hats, tom pitch) are legible, not squished. The
+        // preview replaces the score wholesale, stranding the edit layer's
+        // floating overlays on a now-detached model, so drop them; Accept/Discard
+        // reloads the project, which rebuilds them cleanly.
+        renderPreview: (n) => {
+          document
+            .querySelectorAll('.changelog-panel, .selection-toolbar, .edit-popover')
+            .forEach((e) => e.remove());
+          renderScore(byId('score'), n, { grid: true });
+        },
         reload: () => { void showProject(project.video_id); },
         onClose: close,
       });

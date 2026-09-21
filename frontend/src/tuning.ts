@@ -227,18 +227,26 @@ export function setupTuning(ctx: TuningContext): void {
     }
   }
 
+  // Toggle the visible "running" state (spinner + un-muted status + button
+  // label) so a long, uncached re-run never looks like nothing happened.
+  const setRunning = (on: boolean): void => {
+    retuneBtn.disabled = on;
+    retuneBtn.textContent = on ? 'Re-running…' : 'Re-run preview';
+    status.classList.toggle('running', on);
+  };
+
   async function doRetune(): Promise<void> {
     activeSource?.close();
-    retuneBtn.disabled = true;
     acceptBtn.hidden = discardBtn.hidden = true;
     diffBox.innerHTML = '';
-    status.textContent = 'Re-running…';
+    setRunning(true);
+    status.textContent = 'Starting re-run… (the first, uncached run can take a while)';
     let jobId: string;
     try {
       jobId = await api.startRetune(videoId, params);
     } catch (err) {
+      setRunning(false);
       status.textContent = `Failed to start: ${errMsg(err)}`;
-      retuneBtn.disabled = false;
       return;
     }
     activeSource = api.streamRetune(jobId, {
@@ -246,7 +254,7 @@ export function setupTuning(ctx: TuningContext): void {
       onResult: (p) => {
         activeSource = null;
         preview = p;
-        retuneBtn.disabled = false;
+        setRunning(false);
         status.textContent = 'Preview ready — review below, then Accept or Discard.';
         renderDiff(diffBox, diffNotation(ctx.notation, p.notation));
         ctx.renderPreview(p.notation);
@@ -254,7 +262,7 @@ export function setupTuning(ctx: TuningContext): void {
       },
       onFailure: (error) => {
         activeSource = null;
-        retuneBtn.disabled = false;
+        setRunning(false);
         status.textContent = `Failed: ${error}`;
       },
     });
