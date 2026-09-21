@@ -380,6 +380,7 @@ export function setupEditing(ctx: EditContext): EditHandle {
       lane: active.lane,
       regions: persisted,
       recordOp: (op) => { sel.recordOp(op); markDirty(); },
+      markEdited: () => { sel.markEdited(); markDirty(); },
       afterRedraw: redrawBands,
     });
   };
@@ -598,6 +599,8 @@ interface ColumnPopoverArgs {
   regions: api.Selection[];
   /** Record an edit op into the active draft selection. */
   recordOp: (op: Op) => void;
+  /** Flag a non-op edit (flam toggle) so the draft counts as edited. */
+  markEdited: () => void;
   /** Re-apply selection bands after the bar is redrawn (drawBar wipes them). */
   afterRedraw: () => void;
 }
@@ -611,7 +614,7 @@ function laneGlyph(lane: Lane, note: NoteObj | undefined): string {
 
 function openColumnPopover(args: ColumnPopoverArgs): void {
   closePopover();
-  const { bar, barView, sixteenth, maxSixteenth, numerator, lane, regions, recordOp, afterRedraw } = args;
+  const { bar, barView, sixteenth, maxSixteenth, numerator, lane, regions, recordOp, markEdited, afterRedraw } = args;
   const position = formatPosition(sixteenth);
 
   const box = document.createElement('div');
@@ -649,6 +652,15 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
       const from = note.instrument;
       note.instrument = inst;
       recordOp({ kind: 'reclassify', bar: bar.index, position: note.position, from, to: inst });
+    });
+  // Toggle a same-instrument slashed grace (a flam) on a present stroke. The grace
+  // lives on the note itself — no op — so it's frozen into the selection's notes
+  // on Verify (see SelectionController.markEdited) and drawn by render's attachGrace.
+  const toggleFlam = (note: NoteObj): void =>
+    mutate(() => {
+      if (note.grace) delete note.grace;
+      else note.grace = { instrument: note.instrument, slashed: true };
+      markEdited();
     });
 
   // Toggle a lane on/off at this column (hi-hat turns on as closed by default;
@@ -709,6 +721,18 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
         mk('x', 'hihat_closed', 'Closed hi-hat');
         mk('o', 'hihat_open', 'Open hi-hat');
         row.appendChild(seg);
+      }
+
+      // Flam toggle — a same-instrument grace note. Shown only for a present
+      // stroke, since a flam attaches to a primary hit.
+      if (note) {
+        const flam = document.createElement('button');
+        flam.type = 'button';
+        flam.className = `col-flam${note.grace ? ' active' : ''}`;
+        flam.textContent = 'flam';
+        flam.title = note.grace ? 'Flam on — click to remove' : 'Add a flam (grace note)';
+        flam.onclick = () => toggleFlam(note);
+        row.appendChild(flam);
       }
 
       staff.appendChild(row);

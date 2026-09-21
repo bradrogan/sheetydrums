@@ -18,6 +18,12 @@ export class SelectionController {
   private anchorBar = 0;
   private curBar = 0;
   private ops: Op[] = [];
+  // A flam/grace toggle mutates a note's `grace` in place; it rides along on the
+  // frozen `notes` (toInput reads live notation), not the op list — matching the
+  // backend's _restore_attributes/region_fingerprint treatment. So track it as a
+  // separate "touched" flag, else a grace-only draft would have no ops and read
+  // as having no edits (Verify wouldn't fire).
+  private touched = false;
   /** Set when the draft is editing an already-persisted selection (update vs create). */
   editingId: string | null = null;
 
@@ -25,9 +31,9 @@ export class SelectionController {
     return this.lane !== null;
   }
 
-  /** Whether any edit ops have been captured into the current draft. */
+  /** Whether any edit (an op, or a non-op grace toggle) is in the current draft. */
   get hasEdits(): boolean {
-    return this.ops.length > 0;
+    return this.ops.length > 0 || this.touched;
   }
 
   region(): DraftRegion | null {
@@ -45,6 +51,7 @@ export class SelectionController {
     this.anchorBar = bar;
     this.curBar = bar;
     this.ops = [];
+    this.touched = false;
     this.editingId = null;
   }
 
@@ -59,13 +66,21 @@ export class SelectionController {
     this.anchorBar = sel.bar_start;
     this.curBar = sel.bar_end;
     this.ops = [...sel.ops];
+    this.touched = false;
     this.editingId = sel.selection_id;
   }
 
   clear(): void {
     this.lane = null;
     this.ops = [];
+    this.touched = false;
     this.editingId = null;
+  }
+
+  /** Flag a non-op edit (a flam/grace toggle) so the draft counts as edited even
+   * with no ops. The grace itself is captured by toInput freezing live notes. */
+  markEdited(): void {
+    if (this.region() !== null) this.touched = true;
   }
 
   /** True if (bar, instrument) falls inside the draft's lane × bar region. */

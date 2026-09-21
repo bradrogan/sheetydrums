@@ -46,26 +46,27 @@
     }
   },
   "$defs": {
+    "Instrument": {
+      "type": "string",
+      "enum": [
+        "kick",
+        "snare",
+        "hihat_closed",
+        "hihat_open",
+        "hihat_chick",
+        "ride",
+        "crash",
+        "tom_high",
+        "tom_mid",
+        "tom_low"
+      ],
+      "description": "Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again."
+    },
     "Note": {
       "type": "object",
       "required": ["instrument", "position", "duration"],
       "properties": {
-        "instrument": {
-          "type": "string",
-          "enum": [
-            "kick",
-            "snare",
-            "hihat_closed",
-            "hihat_open",
-            "hihat_chick",
-            "ride",
-            "crash",
-            "tom_high",
-            "tom_mid",
-            "tom_low"
-          ],
-          "description": "Drum vocabulary. Hi-hat semantics are stateful: `hihat_closed` is foot-down struck-with-stick, `hihat_open` is foot-up struck-with-stick (rings until closed), `hihat_chick` is the foot pedal closing the cymbals without a stick hit (audible 'chick' sound). An open hat is implicitly closed by the next hihat_* event in the score; the chick exists for when the drummer closes the pedal without striking again."
-        },
+        "instrument": { "$ref": "#/$defs/Instrument" },
         "position": {
           "type": "string",
           "pattern": "^([0-9]+)(/([0-9]+))?$",
@@ -100,6 +101,21 @@
               "type": "string",
               "minLength": 1,
               "description": "Identifier shared by all notes in the same visual bracket. Must be unique within the bar; any short string (e.g., 't1', 't2')."
+            }
+          }
+        },
+        "grace": {
+          "type": "object",
+          "required": ["instrument"],
+          "description": "Optional grace note attached to (struck just before) this primary note. Absent = an ordinary note. A flam is a same-instrument slashed grace note. The grace has no independent quantized timing — its micro-offset before the primary is a rendering convention, not data — so it is attached to the primary rather than being a separate note event. NOT produced by the pipeline; arrives only via manual editing.",
+          "properties": {
+            "instrument": {
+              "$ref": "#/$defs/Instrument",
+              "description": "Grace stroke instrument. Usually the same as the primary note's instrument (a flam); a different value expresses a cross-voice grace."
+            },
+            "slashed": {
+              "type": "boolean",
+              "description": "Whether the grace note renders with the conventional slash through its stem (the flam convention). Defaults to true (a flam) when absent; set false for an unslashed grace note."
             }
           }
         },

@@ -1,6 +1,6 @@
 # Design: Grace-note & flam notation support
 
-**Status:** approved, notation-support only (owner, 2026-09-19). **Detection is explicitly out of scope** — deferred to v2 (see [`../v2-backlog.md`](../v2-backlog.md) → "Flam / grace-note detection").
+**Status:** **shipped** (notation-support only; 2026-09-20). Approved by owner 2026-09-19. All three sequencing steps landed: schema + the two `anchor.py` attribute-enumerating call sites, VexFlow render, and the beat-editor flam toggle. **Detection remains out of scope** — deferred to v2 (see [`../v2-backlog.md`](../v2-backlog.md) → "Flam / grace-note detection").
 
 ## Goal
 

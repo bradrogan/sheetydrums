@@ -4,6 +4,7 @@
 // Aliased to `InvisibleRest` so our code never conflates the two.
 import {
   Renderer, Stave, StaveNote, Voice, Formatter, Stem, Beam, Tuplet, Dot,
+  GraceNote, GraceNoteGroup,
   GhostNote as InvisibleRest,
 } from 'vexflow';
 import type { DrumTranscriptionEventsV1Draft, Note } from './generated/events';
@@ -587,6 +588,7 @@ function buildBarVoice(
       const note = new StaveNote({ keys: hits.map(keyForHit), duration: code });
       note.setStemDirection(Stem.UP);
       if (code.includes('d')) Dot.buildAndAttach([note], { all: true });
+      attachGrace(note, hits);
       tickables.push(note);
       noteColumns.push({ note, position: s / 16, instrument: hits[0]!.instrument });
       cursor = s + dur16;
@@ -700,6 +702,7 @@ function buildStaveNotes(
     // Edit-mode delta coloring: tint verified (user) noteheads. No-op unless
     // `regions` is passed (i.e. only in the grid/edit render path).
     colorByOrigin(staveNote, hits, barIndex, regions);
+    attachGrace(staveNote, hits);
     staveNotes.push(staveNote);
     positions.push({ value: parsePosition(pos), instrument: hits[0]!.instrument });
     durations.push(duration);
@@ -777,6 +780,29 @@ function keyForHit(hit: Note): string {
   // The suffix picks a non-default notehead glyph (X for cymbals/closed hats,
   // circled-X for open hats); '' leaves the default filled oval.
   return `${mapping.key}${NOTEHEAD_SUFFIX[mapping.notehead]}`;
+}
+
+/**
+ * Attach a VexFlow grace-note group to a column's StaveNote for any hits that
+ * carry a `grace` (flams and grace notes generally; see
+ * docs/design/grace-notes-flams.md). No-op when none do. The grace takes its
+ * own instrument's staff line + notehead (usually the same as the primary), is
+ * an 8th-value by convention, and draws the flam slash unless `slashed` is
+ * explicitly false. Grace notes are modifiers, not tickables, so they don't add
+ * a noteColumn — playhead geometry stays keyed on the primary note's position.
+ */
+function attachGrace(note: StaveNote, hits: readonly Note[]): void {
+  const graced = hits.filter((h) => h.grace);
+  if (graced.length === 0) return;
+  const graceNotes = graced.map((h) => {
+    const g = h.grace!;
+    return new GraceNote({
+      keys: [keyForHit({ ...h, instrument: g.instrument })],
+      duration: '8',
+      slash: g.slashed !== false, // default (absent) = a flam's slash
+    });
+  });
+  note.addModifier(new GraceNoteGroup(graceNotes, false), 0);
 }
 
 export function parsePosition(p: string): number {

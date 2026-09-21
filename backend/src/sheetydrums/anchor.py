@@ -73,7 +73,9 @@ def region_fingerprint(
 
     Positions are canonicalized so a re-spelling ('0' -> '0/1') is not mistaken
     for drift, and `tuplet` is included so a re-grouped bracket — same positions
-    and durations, different bracket — is not mistaken for no change. `confidence`
+    and durations, different bracket — is not mistaken for no change. `grace` is
+    included so a flam added to or removed from the base under a verified region
+    registers as drift (a flam toggle writes the base pre-Phase-2). `confidence`
     is deliberately excluded: it moves on every re-run without changing the
     notation the user verified."""
     items: list[list[Any]] = []
@@ -89,6 +91,7 @@ def region_fingerprint(
                         n.get("duration"),
                         canonical_position(sustain) if sustain is not None else None,
                         n.get("tuplet"),
+                        n.get("grace"),
                     ])
     # Sort on the serialized item so the order is total: two notes agreeing on
     # bar/position/instrument would otherwise fall back on the base's own list
@@ -169,9 +172,9 @@ def _frozen_lookup(frozen_notes: list[dict[str, Any]]) -> dict[tuple[int, str], 
 def _restore_attributes(
     note: dict[str, Any], bar: int, frozen: dict[tuple[int, str], list[dict[str, Any]]], tol: Fraction
 ) -> None:
-    """Overlay a matching frozen note's full attributes (duration, sustain_until)
-    onto an applied note — so e.g. a reclassify to hihat_open restores the sustain
-    the user set on the frozen ground truth."""
+    """Overlay a matching frozen note's full attributes (duration, sustain_until,
+    grace) onto an applied note — so e.g. a reclassify to hihat_open restores the
+    sustain, and a reclassify on a grace-bearing note keeps the user's flam."""
     match = find_note(frozen.get((bar, note["instrument"]), []), note["position"], note["instrument"], tol)
     if match is None:
         return
@@ -181,6 +184,10 @@ def _restore_attributes(
         note["sustain_until"] = match["sustain_until"]
     elif "sustain_until" in note:
         del note["sustain_until"]
+    if "grace" in match:
+        note["grace"] = match["grace"]
+    elif "grace" in note:
+        del note["grace"]
 
 
 def replay_ops(
