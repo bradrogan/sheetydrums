@@ -1,6 +1,6 @@
 # Phase 3 Implementation Plan — "Fix the rest of the song for this"
 
-**Status:** planned. **Owner decisions D1–D5 below are _proposed_ — confirm/adjust before 3a starts.**
+**Status:** planned; **owner decisions D1–D5 locked 2026-09-21** (D3's tie-break revised from "least notes changed" to "least parameter movement" per owner — a repeated mistake *should* fix everywhere). Ready to build 3a.
 **Source of truth:** [`ai-tuning-loop.md`](ai-tuning-loop.md) — Goal/user story, Architecture overview, block 5 (suggestion = proposer + edit-scored search), block 6 (provenance/precedence), "Phasing" (this is **Phase 3**).
 **Prerequisites (shipped):**
 - **Phase 0** — `PipelineParams` threading + stage cache + re-run DAG (`params.py`, `cache.py`; `build_pipeline(config, params, cache_dir=…)`). A late-stage param tweak re-runs in seconds (verified via `/retune`).
@@ -16,11 +16,28 @@ Phase 2 built the container and the precedence rules; Phase 3 is the payoff: a *
 **D1 — Objective scores against ALL verified selections, not just the triggering one.** *(Recommended.)* Each verified selection is a closed-world label set. The search maximises aggregate reproduce-F1 over the **union** of the project's verified selections. Rationale: this is the real "tuning improves with more verifications" signal, avoids a param set that fixes the clicked region but wrecks another verified one, and there is no cold-start (the labels always exist). The "fix the rest" button just names *which* selection prompted the pass; the objective is global over the user layer.
 > Alternative: score only the triggering selection (simpler, but a fix can silently regress other verified regions and it doesn't compound across corrections).
 
-**D2 — A pass adds a system-layer *delta*; it does NOT change the base or `project["params"]`.** *(Recommended.)* The search finds winning params, re-runs the pipeline with them, then expresses the result as **system ops** (the diff vs the current base, restricted to the targeted lanes — D4) tagged `origin='system'`, stored as the `system_layer` with a `pass_id`. Base + `project["params"]` stay put. Rationale: keeps the base stable, makes the pass reviewable/removable/supersedable as a unit (block 6), and keeps user edits locked. The winning params ride along on the pass record for provenance/audit only. A full manual re-tune (Phase 1 `/retune`→accept) remains the separate path that *does* rewrite the base.
-> Alternative: accept the tuned run as a new base (like manual retune-accept). Rejected: that's the base path, not a replaceable overlay, and it would fight the "system regenerated, not replayed" rule.
+**D2 — A pass adds a system-layer *delta*; it does NOT change the base or `project["params"]`.** *(Confirmed 2026-09-21.)* The search finds winning params, re-runs the pipeline with them, then expresses the result as **system ops** (the diff vs the current base, restricted to the targeted lanes — D4) tagged `origin='system'`, stored as the `system_layer` with a `pass_id`. Base + `project["params"]` stay put. Rationale: keeps the base stable, makes the pass reviewable/removable/supersedable as a unit (block 6), and keeps user edits locked. The winning params ride along on the pass record for provenance/audit + to regenerate the delta on a later base change. A full manual re-tune (Phase 1 `/retune`→accept) remains the separate path that *does* rewrite the base.
 
-**D3 — Objective = reproduce-F1 (primary), least-collateral-change (tie-break).** *(Recommended.)* Primary term: bipartite-matched F1 of each candidate against the verified selections' frozen notes, per the lane's schema-instrument set, at a sixteenth tolerance (reuse `_harness`). Tie-break: prefer the candidate that changes the **fewest notes outside** the verified regions vs the current base (parsimony / least surprise), so a params set that reproduces the labels *and* disturbs the rest least wins. A *positive* "similar passages" coverage reward needs ground truth we don't have outside the selections — so real coverage comes from D1 (more selections), and parsimony guards the unlabelled remainder.
-> Alternative: an explicit similar-passage coverage term (deferred — needs a passage-similarity metric and has no labels to validate against).
+How a pass differs from a manual base re-tune — both re-run the pipeline, but:
+
+| | manual base re-tune (`/retune`→accept) | "fix the rest" system pass |
+|---|---|---|
+| params chosen by | you, hand-dialing | the search, scored vs your verified labels |
+| result lands as | a new **base** (replaces the generation) | a **system overlay** on the unchanged base |
+| precedence | *is* the base; selections sit on top | **below** selections; dropped inside verified regions |
+| your verified regions | reconciled/re-anchored onto the new base | untouched by construction |
+| undo | revert to a version snapshot | remove the pass as a unit (base + edits intact) |
+| scope | whole song | targeted lanes only (D4) |
+
+> Alternative: accept the tuned run as a new base. Rejected: that's the base path, not a replaceable overlay, and it fights the "system regenerated, not replayed" rule.
+
+**D3 — Objective = reproduce-F1 (primary), minimal-parameter-perturbation (tie-break). Propagation is inherent in a global param fix.** *(Revised 2026-09-21 per owner — supersedes the earlier "least-collateral-change" tie-break, which wrongly penalised the desired sweeping fix.)*
+- **The fix is a parameter change, and params apply globally.** When the search finds a knob value that reproduces your one verified bar, that same value applies song-wide — so the correction propagates to every similarly-behaving passage *for free*. **You verify one representative bar and say "fix this everywhere"; you never verify the mistake per-bar.** This is the core "fix the rest" behaviour and it falls straight out of tuning-by-param (vs editing note-by-note).
+- **Primary term:** bipartite-matched F1 of each candidate against the verified selections' frozen notes, per the lane's schema-instrument set, at a sixteenth tolerance (reuse the matcher). Aggregated over **all** verified selections (D1).
+- **Tie-break:** among param sets with equal reproduce-F1, prefer the **smallest parameter movement from the current values** (gentlest knob nudge that achieves the match). This lets a fix propagate wherever it naturally applies while rejecting an extreme param set that reproduces your one bar by coincidence and mangles the rest. It does **not** penalise many notes changing — a repeated mistake *should* change many notes.
+- **When one bar under-constrains the fix** (a genuinely mixed section — e.g. some passages open, some closed), verify a second representative bar. That's another label (D1) and further pins the search; the loop then finds the params that satisfy *both*. Additional verifications are only needed when the first doesn't pin it — never to hand-propagate.
+- **"Notes changed outside the verified regions"** is kept as a **reported preview stat** (so you can eyeball over-reach in the delta), **not** a scoring term.
+> Alternative: a positive similar-passage coverage reward — deferred (needs a passage-similarity metric and has no labels to validate against; D1 + global-param propagation cover the intent for v1).
 
 **D4 — A pass's system ops are limited to the lanes the search targeted.** *(Recommended.)* The knob-map (below) maps proposed knobs → affected lanes (e.g. `expander.hihat_*` → the `hihat` lane; `expander.tom_*` → tom lanes; `transcription.thresholds[snare]` → `snare`). The base-vs-candidate diff emits ops only for those lanes, so a "fix the hats" pass never rewrites kicks just because ADTOF jittered elsewhere. Bounds the delta and keeps the pass legible.
 
@@ -56,8 +73,9 @@ verified selection(s) ─┐
 - For each verified selection (lane L, bars [bs,be], frozen `notes`): take the candidate's notes in lane L across [bs,be], and the frozen notes, and bipartite-match **per schema instrument in L's instrument set** at a sixteenth tolerance. Lane→instruments: `snare→{snare}`, `hihat→{hihat_closed,hihat_open}` (chick is its own lane), `tom_*` each its own instrument, cymbals `ride`/`crash`, `kick→{kick}`. This is what makes a closed→open reclassify score as a miss until the params fix it.
 - Reuse `scripts/eval/_harness.py` primitives — promote `bipartite_match` + `stats` into `sheetydrums.matching` (importable from the package, not just the eval scripts) and have the eval scripts import from there (no behaviour change, one matcher).
 - Aggregate TP/FP/FN across all selections → `overall_f1`, plus `per_selection` and `per_instrument` breakdowns and a **`residual`** list (the still-wrong labels: which (selection, bar, instrument, position) are FP/FN) — the residual is what drives the capped loop's re-proposal (block 5c).
-- `ScoreResult.collateral`: count of notes changed **outside** verified regions vs the current base, restricted to targeted lanes — the D3 tie-break.
-- **Tests:** pure fixtures, no pipeline. A candidate that exactly matches the selection scores F1=1.0; a closed-vs-open mismatch scores <1; adding an unrelated note outside the region raises `collateral` but not F1; multi-selection aggregation sums correctly.
+- **Ranking:** candidates are ranked by `overall_f1` first, then by the **tie-break = smallest parameter movement from the current values** (the search's job, §3b — the scorer just supplies `overall_f1`). Per D3, this is *not* "fewest notes changed."
+- `ScoreResult.collateral`: count of notes changed **outside** verified regions vs the current base, restricted to targeted lanes — a **reported preview stat only** (surfaced in the delta so over-reach is visible), never a scoring term.
+- **Tests:** pure fixtures, no pipeline. A candidate that exactly matches the selection scores F1=1.0; a closed-vs-open mismatch scores <1; a candidate that reproduces the label *and* changes many other bars in the targeted lane still scores F1=1.0 (a sweeping fix is not penalised); `collateral` is reported but doesn't change the F1 ranking; multi-selection aggregation sums correctly.
 
 ### §3b — heuristic proposer + capped loop (`search/propose.py`, `search/loop.py`)
 
@@ -69,7 +87,7 @@ verified selection(s) ─┐
   - coarse snapping → `quantize.subdivisions_per_whole`.
   - (separation knobs deliberately excluded from the default map — expensive, rarely the fix; reachable only if later rounds exhaust the cheap knobs.)
 - **Capped auto-loop** (block 5c, owner-locked 2026-09-20): run (a)+(b); if best `F1 ≥ match_threshold` stop; else re-invoke the proposer with the **residual** + knobs-already-tried so it picks a *different* axis; stop at round cap (3), convergence, or a no-gain round. Return best params **across all rounds** + the residual it couldn't fix.
-- **Search (b):** coordinate descent over the proposed knobs — coarse grid per knob within `bounds`, then one local refine around the best; ≤ D5 candidates. Each candidate = `build_pipeline(config, PipelineParams.from_dict(cand), cache_dir=store.stages_dir(id)).transcribe(audio)` → `serialize_to_schema` → score. Cached upstream stages make this ~seconds.
+- **Search (b):** coordinate descent over the proposed knobs — coarse grid per knob within `bounds`, then one local refine around the best; ≤ D5 candidates. Each candidate = `build_pipeline(config, PipelineParams.from_dict(cand), cache_dir=store.stages_dir(id)).transcribe(audio)` → `serialize_to_schema` → score. Cached upstream stages make this ~seconds. **Rank candidates by `(overall_f1` desc, parameter-distance-from-current asc`)`** (D3): among equal-F1 candidates the gentlest knob move wins, so a fix propagates globally without over-reaching. Parameter distance is a normalised sum over the touched knobs (each `(value − current) / range`).
 - **Tests:** proposer returns the hihat knobs for a hihat residual, tom knobs for a tom residual, and a *different* set on the second round given a residual + tried-set; loop stops at cap and returns the best partial. Search uses a **fake pipeline** (a function mapping params→notation) so the loop/scoring are tested with zero model installs — mirrors `test_pipeline.py`'s DI fakes.
 
 ### §3c — system-layer delta + persistence (`layering.py`, `server.py`)
