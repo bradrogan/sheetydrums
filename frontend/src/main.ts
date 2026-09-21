@@ -369,6 +369,8 @@ async function showProject(videoId: string): Promise<void> {
     // Persisted verified selections (the user layer) to draw as bands. edit.ts
     // mutates this array in place as selections are committed — no full reload.
     selections: (project.selections ?? []) as unknown as api.Selection[],
+    // Raw base notation, so removing a selection reverts its region to it.
+    base: (project.base_notation ?? project.notation) as Notation,
   });
   await setupPlayback(project, model, sync);
   setupTuningPanel(project, events);

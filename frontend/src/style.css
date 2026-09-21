@@ -749,6 +749,58 @@ button#edit-toggle.active {
   color: #fff;
 }
 
+/* Change-log panel (edit mode): manage/undo verified selections. */
+.changelog-panel {
+  position: fixed;
+  top: calc(var(--topbar-offset, 4rem) + 0.75rem);
+  right: 1rem;
+  z-index: 40;
+  width: 15rem;
+  max-width: 42vw;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #0f1f28;
+  color: #eafcff;
+  border: 2.5px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: var(--sticker);
+  font-size: 0.85rem;
+}
+.changelog-head {
+  padding: 0.4rem 0.7rem;
+  font-family: var(--font-hand);
+  font-size: 1.05rem;
+  border-bottom: 1.5px solid rgba(234, 252, 255, 0.25);
+}
+.changelog-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  border-bottom: 1px solid rgba(234, 252, 255, 0.12);
+}
+.changelog-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.changelog-row button.danger {
+  flex: 0 0 auto;
+  border: 1.5px solid var(--crayon-red);
+  border-radius: 7px;
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  background: transparent;
+  color: var(--crayon-red);
+}
+.changelog-row button.danger:hover {
+  background: var(--crayon-red);
+  color: #fff;
+}
+
 /* Unsaved-changes modal (leaving edit mode). */
 .edit-modal-overlay {
   position: fixed;
