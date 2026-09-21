@@ -112,10 +112,12 @@ export const BAR_SVG_HEIGHT = 140;
 const STAVE_X = 0;
 const STAVE_Y = 30;
 const STAVE_WIDTH = 800;
-// Room to tuck a downbeat flam's grace note inside the bar (it draws to the left
-// of the principal note; at the bar's left edge it would otherwise spill past
-// the barline into the previous bar). ~ one grace notehead + slash.
+// Room to tuck a leading note's left-side ornament inside the bar (grace notes
+// and left parentheses draw to the LEFT of the principal; at the bar's left edge
+// they'd otherwise spill past the barline into the previous bar). A flam's grace
+// note is wider than a parenthesis.
 const GRACE_INSET_PX = 13;
+const PAREN_INSET_PX = 8;
 
 /** One rendered note's geometry, keyed to its position in the bar. */
 export interface NoteView {
@@ -341,7 +343,7 @@ export function drawBar(
     voice.addTickables(tickables);
     const beams = beamGroups.map((group) => new Beam(group));
     new Formatter().joinVoices([voice]).format([voice], STAVE_WIDTH - 80);
-    insetLeadingFlam(noteColumns.map((c) => c.note), barView.contentX0);
+    insetLeadingOrnament(noteColumns.map((c) => c.note), barView.contentX0);
     voice.draw(ctx, stave);
     for (const beam of beams) beam.setContext(ctx).draw();
     for (const col of noteColumns) {
@@ -376,7 +378,7 @@ export function drawBar(
   const beams = beamGroups.map((group) => new Beam(group));
 
   new Formatter().joinVoices([voice]).format([voice], STAVE_WIDTH - 80);
-  insetLeadingFlam(staveNotes, barView.contentX0);
+  insetLeadingOrnament(staveNotes, barView.contentX0);
   voice.draw(ctx, stave);
 
   for (const beam of beams) {
@@ -445,12 +447,14 @@ function drawGridBar(
   const beams = beamGroups.map((group) => new Beam(group));
   new Formatter().joinVoices([voice]).format([voice], STAVE_WIDTH - 80);
 
-  // Override the formatter's proportional x with the fixed grid slot x.
+  // Override the formatter's proportional x with the fixed grid slot x. Shift
+  // the TickContext (not x_shift) so each note's grace/parenthesis modifiers move
+  // with it — see shiftNoteX.
   for (let i = 0; i < staveNotes.length; i++) {
     const slot = Math.round(positions[i]!.value * 16);
-    staveNotes[i]!.setXShift(gridX(slot) - staveNotes[i]!.getAbsoluteX());
+    shiftNoteX(staveNotes[i]!, gridX(slot) - staveNotes[i]!.getAbsoluteX());
   }
-  insetLeadingFlam(staveNotes, barView.contentX0);
+  insetLeadingOrnament(staveNotes, barView.contentX0);
 
   voice.draw(ctx, stave);
   for (const beam of beams) beam.setContext(ctx).draw();
@@ -830,18 +834,38 @@ function attachGhost(note: StaveNote, hits: readonly Note[]): void {
 }
 
 /**
- * Keep a bar's leading note's flam inside the bar. A grace note draws to the
- * left of its principal, so a flam on the first (leftmost) note spills past the
- * left barline into the adjacent previous bar. Nudge that note right just enough
- * that the grace clears `contentX0`. No-op when the leading note has no flam or
- * already sits far enough in. Call after formatting (and after any grid x
- * override), before `voice.draw`. `notes` must be in left-to-right order.
+ * Move a note — and its left/right modifiers (grace notes, parentheses) — by
+ * `dx` px. Shifts the note's TickContext, NOT its `x_shift`: `getAbsoluteX()`
+ * (the notehead) and the modifier anchors (which read the TickContext x directly
+ * via `alignSubNotesWithNote` / `getModifierStartXY`) both derive from the
+ * TickContext x, so they travel together. `setXShift` moves only the notehead,
+ * which strands a flam/parenthesis at the formatter's original x — a beat back
+ * in grid mode, where we reposition every note. Each note owns its TickContext
+ * (one per tick), so this doesn't disturb the others.
  */
-function insetLeadingFlam(notes: StaveNote[], contentX0: number): void {
+function shiftNoteX(note: StaveNote, dx: number): void {
+  const tc = note.getTickContext();
+  tc.setXOffset(tc.getXOffset() + dx);
+}
+
+/**
+ * Keep a bar's leading note's left-side ornament inside the bar. Grace notes and
+ * left parentheses draw to the left of their principal, so on the first
+ * (leftmost) note they spill past the left barline into the adjacent previous
+ * bar. Nudge that note right just enough to clear `contentX0`. No-op when the
+ * leading note has no such ornament or already sits far enough in. Call after
+ * formatting (and after any grid x positioning), before `voice.draw`. `notes`
+ * must be in left-to-right order.
+ */
+function insetLeadingOrnament(notes: StaveNote[], contentX0: number): void {
   const first = notes[0];
-  if (!first || !first.getModifiers().some((m) => m instanceof GraceNoteGroup)) return;
-  const need = contentX0 + GRACE_INSET_PX - first.getAbsoluteX();
-  if (need > 0) first.setXShift(first.getXShift() + need);
+  if (!first) return;
+  const mods = first.getModifiers();
+  const hasGrace = mods.some((m) => m instanceof GraceNoteGroup);
+  const hasParen = mods.some((m) => m instanceof Parenthesis);
+  if (!hasGrace && !hasParen) return;
+  const need = contentX0 + (hasGrace ? GRACE_INSET_PX : PAREN_INSET_PX) - first.getAbsoluteX();
+  if (need > 0) shiftNoteX(first, need);
 }
 
 export function parsePosition(p: string): number {

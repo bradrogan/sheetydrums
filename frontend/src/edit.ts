@@ -241,9 +241,16 @@ export function setupEditing(ctx: EditContext): EditHandle {
 
   const commit = async (): Promise<boolean> => {
     const input = sel.toInput(notation);
-    let created: api.Selection;
+    // Editing an already-verified region updates it in place (PUT); a brand-new
+    // region creates one (POST). Creating a second selection over the same
+    // lane×bar is rejected by the backend's no-overlap invariant — which is what
+    // the update path exists to avoid.
+    const editingId = sel.editingId;
+    let saved_sel: api.Selection;
     try {
-      created = await api.createSelection(videoId, input);
+      saved_sel = editingId
+        ? await api.updateSelection(videoId, editingId, input)
+        : await api.createSelection(videoId, input);
     } catch (err) {
       alert(`Couldn't save selection: ${err instanceof Error ? err.message : String(err)}`);
       return false;
@@ -252,7 +259,11 @@ export function setupEditing(ctx: EditContext): EditHandle {
     // already shows the edited notes (edits mutate `notation`, which the server
     // just froze verbatim), so committing only flips the draft band (dashed) to
     // a verified band (solid) where the user is already looking.
-    persisted.push(created);
+    const existingIdx = editingId
+      ? persisted.findIndex((s) => s.selection_id === editingId)
+      : -1;
+    if (existingIdx >= 0) persisted[existingIdx] = saved_sel;
+    else persisted.push(saved_sel);
     sel.clear();
     hideToolbar();
     editSession.dirty = false;
@@ -277,6 +288,32 @@ export function setupEditing(ctx: EditContext): EditHandle {
       sel.begin(lane, bar);
       redrawBands();
     }
+  };
+
+  // The persisted selection that already owns (lane, bar), if any.
+  const coveringSelection = (lane: LaneKey, bar: number): api.Selection | undefined =>
+    persisted.find((s) => s.lane === lane && s.bar_start <= bar && bar <= s.bar_end);
+
+  // Load an already-verified selection into the draft for further editing, so a
+  // commit updates it (PUT) rather than creating an overlapping second selection.
+  // Mirrors startDraft's discard-of-uncommitted-edits before switching.
+  const editExisting = (existing: api.Selection): void => {
+    if (sel.hasEdits) {
+      notation.bars = structuredClone(saved).bars;
+      sel.edit(existing);
+      rerenderAll(true);
+    } else {
+      sel.edit(existing);
+      redrawBands();
+    }
+  };
+
+  // Enter the right draft for a click/tap at (lane, bar): edit the covering
+  // verified selection if there is one, else start a fresh draft.
+  const enterDraftAt = (lane: LaneKey, bar: number): void => {
+    const existing = coveringSelection(lane, bar);
+    if (existing) editExisting(existing);
+    else startDraft(lane, bar);
   };
 
   const enterEditMode = (): void => {
@@ -369,7 +406,7 @@ export function setupEditing(ctx: EditContext): EditHandle {
     const inDraft =
       r !== null && r.lane === lane && r.barStart <= barView.index && barView.index <= r.barEnd;
     if (!inDraft) {
-      startDraft(lane, barView.index);
+      enterDraftAt(lane, barView.index); // edits the covering verified selection if there is one
       showToolbar();
     }
     const active = sel.region();
