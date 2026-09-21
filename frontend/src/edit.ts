@@ -119,7 +119,9 @@ export function setupEditing(ctx: EditContext): void {
   const rerenderAll = (gridMode: boolean): void => {
     for (const bv of model.bars) {
       const bar = notation.bars.find((b) => b.index === bv.index);
-      if (bar) drawBar(bv, bar, gridMode);
+      // Grid (edit) mode gets delta coloring from the verified selections;
+      // view mode stays uncoloured (provenance is irrelevant during playback).
+      if (bar) drawBar(bv, bar, gridMode, gridMode ? persisted : undefined);
     }
     if (gridMode) redrawBands();
   };
@@ -175,7 +177,7 @@ export function setupEditing(ctx: EditContext): void {
         if (laneOf(n.instrument) === lane) bar.notes.push(structuredClone(n));
       }
       const bv = model.bars.find((b) => b.index === bar.index);
-      if (bv) drawBar(bv, bar, true);
+      if (bv) drawBar(bv, bar, true, persisted);
     }
   };
 
@@ -349,6 +351,7 @@ export function setupEditing(ctx: EditContext): void {
     openColumnPopover({
       bar, barView, sixteenth, maxSixteenth, numerator,
       lane: active.lane,
+      regions: persisted,
       recordOp: (op) => { sel.recordOp(op); markDirty(); },
       afterRedraw: redrawBands,
     });
@@ -506,6 +509,8 @@ interface ColumnPopoverArgs {
   numerator: number;
   /** The lane the active selection owns — the beat editor is scoped to it. */
   lane: LaneKey;
+  /** Verified selections, so the single-bar redraw keeps its delta coloring. */
+  regions: api.Selection[];
   /** Record an edit op into the active draft selection. */
   recordOp: (op: Op) => void;
   /** Re-apply selection bands after the bar is redrawn (drawBar wipes them). */
@@ -521,7 +526,7 @@ function laneGlyph(lane: Lane, note: NoteObj | undefined): string {
 
 function openColumnPopover(args: ColumnPopoverArgs): void {
   closePopover();
-  const { bar, barView, sixteenth, maxSixteenth, numerator, lane, recordOp, afterRedraw } = args;
+  const { bar, barView, sixteenth, maxSixteenth, numerator, lane, regions, recordOp, afterRedraw } = args;
   const position = formatPosition(sixteenth);
 
   const box = document.createElement('div');
@@ -533,7 +538,7 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
   // Redraw the bar (grid mode), re-apply the column tint (drawBar wipes it), then
   // re-apply the selection bands (also wiped).
   const redraw = (): void => {
-    drawBar(barView, bar, true);
+    drawBar(barView, bar, true, regions);
     addColHighlight(barView, sixteenth, maxSixteenth);
     afterRedraw();
   };

@@ -268,6 +268,8 @@ export function drawBar(
   barView: BarView,
   bar: DrumTranscriptionEventsV1Draft['bars'][number],
   gridMode = false,
+  // Verified selections for edit-mode delta coloring; only used in grid mode.
+  regions?: OriginRegion[],
 ): void {
   const { svgHost, timeSig, showClef } = barView;
   svgHost.innerHTML = '';
@@ -313,7 +315,7 @@ export function drawBar(
 
   // Grid (edit) mode: fixed 16th-note lattice so notes never shift as you edit.
   if (gridMode) {
-    drawGridBar(ctx, stave, barView, bar, num ?? 4, den ?? 4, barLengthInSixteenths, sixteenthsPerBeat);
+    drawGridBar(ctx, stave, barView, bar, num ?? 4, den ?? 4, barLengthInSixteenths, sixteenthsPerBeat, regions);
     return;
   }
 
@@ -406,6 +408,7 @@ function drawGridBar(
   den: number,
   maxSixteenth: number,
   sixteenthsPerBeat: number,
+  regions?: OriginRegion[],
 ): void {
   const span = barView.contentX1 - barView.contentX0;
   const gridX = (slot: number): number => barView.contentX0 + (slot / maxSixteenth) * span;
@@ -421,6 +424,8 @@ function drawGridBar(
     bar.notes,
     maxSixteenth,
     sixteenthsPerBeat,
+    bar.index,
+    regions,
   );
   if (staveNotes.length === 0) return;
 
@@ -618,6 +623,8 @@ function buildStaveNotes(
   notes: readonly Note[],
   barLengthInSixteenths: number,
   sixteenthsPerBeat: number,
+  barIndex = 0,
+  regions?: OriginRegion[],
 ): BuildResult {
   // Group hits at the same position into one chord (one StaveNote, multi-key).
   const byPosition = new Map<string, Note[]>();
@@ -687,6 +694,9 @@ function buildStaveNotes(
     if (duration.includes('d')) {
       Dot.buildAndAttach([staveNote], { all: true });
     }
+    // Edit-mode delta coloring: tint verified (user) noteheads. No-op unless
+    // `regions` is passed (i.e. only in the grid/edit render path).
+    colorByOrigin(staveNote, hits, barIndex, regions);
     staveNotes.push(staveNote);
     positions.push({ value: parsePosition(pos), instrument: hits[0]!.instrument });
     durations.push(duration);
@@ -842,6 +852,56 @@ const LANE_BAND_HALF_H = 7;
  * caller must re-apply this after each redraw (as with the column highlight).
  * Returns the element so the caller can track/remove it.
  */
+export type NoteOrigin = 'base' | 'user' | 'system';
+
+/** Notehead fill/stroke per non-base origin (base keeps VexFlow's default). */
+const ORIGIN_STYLE: Record<'user' | 'system', { fillStyle: string; strokeStyle: string }> = {
+  user: { fillStyle: '#128a3a', strokeStyle: '#128a3a' }, // verified green (matches the band)
+  system: { fillStyle: '#d9660f', strokeStyle: '#d9660f' }, // reserved for the Phase 3 system pass
+};
+
+/** Minimal selection shape needed to attribute a note to the user layer. */
+export interface OriginRegion {
+  lane: string;
+  bar_start: number;
+  bar_end: number;
+}
+
+/**
+ * A note's provenance, for delta coloring in EDIT mode. Phase 2 has no system
+ * layer, so this is derived locally from the verified selections: a note is
+ * `user` if it sits in a verified lane × bar region, else `base`. When Phase 3
+ * adds a system pass, swap this for the backend `origin_map` (which also carries
+ * `system` — reserved orange above).
+ */
+export function noteOrigin(
+  barIndex: number,
+  instrument: SchemaDrumClass,
+  regions: OriginRegion[] | undefined,
+): NoteOrigin {
+  if (!regions) return 'base';
+  const lane = laneOf(instrument);
+  for (const r of regions) {
+    if (r.lane === lane && r.bar_start <= barIndex && barIndex <= r.bar_end) return 'user';
+  }
+  return 'base';
+}
+
+/** Tint a StaveNote's noteheads by per-key origin (a slot can mix base + user
+ * hits — e.g. a base kick and a verified hi-hat — so colour per key). */
+function colorByOrigin(
+  note: StaveNote,
+  hits: readonly Note[],
+  barIndex: number,
+  regions: OriginRegion[] | undefined,
+): void {
+  if (!regions) return;
+  hits.forEach((hit, k) => {
+    const o = noteOrigin(barIndex, hit.instrument, regions);
+    if (o !== 'base') note.setKeyStyle(k, ORIGIN_STYLE[o]);
+  });
+}
+
 export function drawSelectionBand(bv: BarView, laneY: number, className: string): HTMLDivElement {
   const band = document.createElement('div');
   band.className = className;
