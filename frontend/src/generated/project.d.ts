@@ -155,6 +155,10 @@ export interface Note {
     slashed?: boolean;
   };
   /**
+   * Whether this hit is a ghost note — a soft/muted stroke, rendered with parentheses around the notehead. Notation-only; NOT produced by the pipeline (it arrives via manual editing). Meaningful mainly on snare and toms.
+   */
+  ghost?: boolean;
+  /**
    * Classifier confidence. Useful for filtering or highlighting uncertain hits in the UI.
    */
   confidence?: number;
@@ -408,6 +412,10 @@ export interface Note1 {
      */
     slashed?: boolean;
   };
+  /**
+   * Whether this hit is a ghost note — a soft/muted stroke, rendered with parentheses around the notehead. Notation-only; NOT produced by the pipeline (it arrives via manual editing). Meaningful mainly on snare and toms.
+   */
+  ghost?: boolean;
   /**
    * Classifier confidence. Useful for filtering or highlighting uncertain hits in the UI.
    */

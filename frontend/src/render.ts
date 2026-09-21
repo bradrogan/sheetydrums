@@ -4,7 +4,7 @@
 // Aliased to `InvisibleRest` so our code never conflates the two.
 import {
   Renderer, Stave, StaveNote, Voice, Formatter, Stem, Beam, Tuplet, Dot,
-  GraceNote, GraceNoteGroup,
+  GraceNote, GraceNoteGroup, Parenthesis, Modifier,
   GhostNote as InvisibleRest,
 } from 'vexflow';
 import type { DrumTranscriptionEventsV1Draft, Note } from './generated/events';
@@ -112,6 +112,10 @@ export const BAR_SVG_HEIGHT = 140;
 const STAVE_X = 0;
 const STAVE_Y = 30;
 const STAVE_WIDTH = 800;
+// Room to tuck a downbeat flam's grace note inside the bar (it draws to the left
+// of the principal note; at the bar's left edge it would otherwise spill past
+// the barline into the previous bar). ~ one grace notehead + slash.
+const GRACE_INSET_PX = 13;
 
 /** One rendered note's geometry, keyed to its position in the bar. */
 export interface NoteView {
@@ -337,6 +341,7 @@ export function drawBar(
     voice.addTickables(tickables);
     const beams = beamGroups.map((group) => new Beam(group));
     new Formatter().joinVoices([voice]).format([voice], STAVE_WIDTH - 80);
+    insetLeadingFlam(noteColumns.map((c) => c.note), barView.contentX0);
     voice.draw(ctx, stave);
     for (const beam of beams) beam.setContext(ctx).draw();
     for (const col of noteColumns) {
@@ -371,6 +376,7 @@ export function drawBar(
   const beams = beamGroups.map((group) => new Beam(group));
 
   new Formatter().joinVoices([voice]).format([voice], STAVE_WIDTH - 80);
+  insetLeadingFlam(staveNotes, barView.contentX0);
   voice.draw(ctx, stave);
 
   for (const beam of beams) {
@@ -444,6 +450,7 @@ function drawGridBar(
     const slot = Math.round(positions[i]!.value * 16);
     staveNotes[i]!.setXShift(gridX(slot) - staveNotes[i]!.getAbsoluteX());
   }
+  insetLeadingFlam(staveNotes, barView.contentX0);
 
   voice.draw(ctx, stave);
   for (const beam of beams) beam.setContext(ctx).draw();
@@ -589,6 +596,7 @@ function buildBarVoice(
       note.setStemDirection(Stem.UP);
       if (code.includes('d')) Dot.buildAndAttach([note], { all: true });
       attachGrace(note, hits);
+      attachGhost(note, hits);
       tickables.push(note);
       noteColumns.push({ note, position: s / 16, instrument: hits[0]!.instrument });
       cursor = s + dur16;
@@ -703,6 +711,7 @@ function buildStaveNotes(
     // `regions` is passed (i.e. only in the grid/edit render path).
     colorByOrigin(staveNote, hits, barIndex, regions);
     attachGrace(staveNote, hits);
+    attachGhost(staveNote, hits);
     staveNotes.push(staveNote);
     positions.push({ value: parsePosition(pos), instrument: hits[0]!.instrument });
     durations.push(duration);
@@ -803,6 +812,36 @@ function attachGrace(note: StaveNote, hits: readonly Note[]): void {
     });
   });
   note.addModifier(new GraceNoteGroup(graceNotes, false), 0);
+}
+
+/**
+ * Wrap the notehead(s) of any ghost hits in parentheses (the soft-hit
+ * convention; see docs/design/grace-notes-flams.md). A column's StaveNote can be
+ * a chord (one key per hit, in `hits` order), so parenthesize per-notehead at
+ * the ghost hit's key index — not the whole note — so a ghost snare sharing a
+ * beat with a normal hi-hat doesn't parenthesize the hi-hat too.
+ */
+function attachGhost(note: StaveNote, hits: readonly Note[]): void {
+  hits.forEach((h, i) => {
+    if (!h.ghost) return;
+    note.addModifier(new Parenthesis(Modifier.Position.LEFT), i);
+    note.addModifier(new Parenthesis(Modifier.Position.RIGHT), i);
+  });
+}
+
+/**
+ * Keep a bar's leading note's flam inside the bar. A grace note draws to the
+ * left of its principal, so a flam on the first (leftmost) note spills past the
+ * left barline into the adjacent previous bar. Nudge that note right just enough
+ * that the grace clears `contentX0`. No-op when the leading note has no flam or
+ * already sits far enough in. Call after formatting (and after any grid x
+ * override), before `voice.draw`. `notes` must be in left-to-right order.
+ */
+function insetLeadingFlam(notes: StaveNote[], contentX0: number): void {
+  const first = notes[0];
+  if (!first || !first.getModifiers().some((m) => m instanceof GraceNoteGroup)) return;
+  const need = contentX0 + GRACE_INSET_PX - first.getAbsoluteX();
+  if (need > 0) first.setXShift(first.getXShift() + need);
 }
 
 export function parsePosition(p: string): number {

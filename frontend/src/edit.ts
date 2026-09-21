@@ -653,15 +653,22 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
       note.instrument = inst;
       recordOp({ kind: 'reclassify', bar: bar.index, position: note.position, from, to: inst });
     });
-  // Set a same-instrument grace ornament on a present stroke: 'flam' (slashed
-  // grace) or 'grace' (unslashed), or 'none' to remove it. The grace lives on
-  // the note itself — no op, no new note in the sequence — so it's frozen into
-  // the selection's notes on Verify (see SelectionController.markEdited) and
-  // drawn by render's attachGrace. Snare + toms only (gated at the call site).
-  const setOrnament = (note: NoteObj, kind: 'flam' | 'grace' | 'none'): void =>
+  // Two independent notation ornaments on a present stroke, snare + toms only
+  // (gated at the call site). Both live on the note itself — no op, no new note
+  // in the sequence — so they're frozen into the selection's notes on Verify
+  // (see SelectionController.markEdited) and drawn by render's attach helpers.
+  //   flam  → a same-instrument slashed grace note tucked before the hit
+  //   ghost → the hit's notehead wrapped in parentheses (a soft/muted stroke)
+  const toggleFlam = (note: NoteObj): void =>
     mutate(() => {
-      if (kind === 'none') delete note.grace;
-      else note.grace = { instrument: note.instrument, slashed: kind === 'flam' };
+      if (note.grace) delete note.grace;
+      else note.grace = { instrument: note.instrument, slashed: true };
+      markEdited();
+    });
+  const toggleGhost = (note: NoteObj): void =>
+    mutate(() => {
+      if (note.ghost) delete note.ghost;
+      else note.ghost = true;
       markEdited();
     });
 
@@ -725,28 +732,25 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
         row.appendChild(seg);
       }
 
-      // Flam / grace ornament — snare + toms only (a grace ornaments a primary
-      // stroke; scope the affordance to the drums it's played on). Two buttons:
-      // flam (slashed grace) and grace (unslashed); clicking the active one
-      // removes it. Shown only for a present stroke.
+      // Flam / ghost ornaments — snare + toms only (these are played on those
+      // drums; scope the affordance to them). Two independent toggles: flam (a
+      // slashed grace note) and ghost (parenthesized soft hit). Shown only for a
+      // present stroke, since both notate an existing hit.
       const ornamentable = laneRow.key === 'snare' || laneRow.key.startsWith('tom_');
       if (note && ornamentable) {
         const seg = document.createElement('div');
         seg.className = 'col-variant col-ornament';
-        const cur: 'flam' | 'grace' | 'none' = note.grace
-          ? (note.grace.slashed === false ? 'grace' : 'flam')
-          : 'none';
-        const mkg = (label: string, kind: 'flam' | 'grace', title: string): void => {
+        const mkg = (label: string, active: boolean, onClick: () => void, title: string): void => {
           const b = document.createElement('button');
           b.type = 'button';
           b.textContent = label;
           b.title = title;
-          if (cur === kind) b.className = 'active';
-          b.onclick = () => setOrnament(note, cur === kind ? 'none' : kind);
+          if (active) b.className = 'active';
+          b.onclick = onClick;
           seg.appendChild(b);
         };
-        mkg('flam', 'flam', 'Flam — slashed grace note (click again to remove)');
-        mkg('grace', 'grace', 'Grace note — unslashed (click again to remove)');
+        mkg('flam', !!note.grace, () => toggleFlam(note), 'Flam — slashed grace note (click to toggle)');
+        mkg('ghost', !!note.ghost, () => toggleGhost(note), 'Ghost note — soft hit in parentheses (click to toggle)');
         row.appendChild(seg);
       }
 

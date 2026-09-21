@@ -119,6 +119,10 @@
             }
           }
         },
+        "ghost": {
+          "type": "boolean",
+          "description": "Whether this hit is a ghost note — a soft/muted stroke, rendered with parentheses around the notehead. Notation-only; NOT produced by the pipeline (it arrives via manual editing). Meaningful mainly on snare and toms."
+        },
         "confidence": {
           "type": "number",
           "minimum": 0,
