@@ -30,8 +30,20 @@ import {
 } from './render';
 import type { SyncController } from './sync';
 import { SelectionController } from './selection';
+import { diffNotation, type NotationDiff } from './tuning';
 import * as api from './api';
 import type { Project, Notation, Op } from './api';
+
+/** Handle returned by setupEditing so the tuning panel can drive the re-tune
+ * preview *through* the edit layer (verified selections overlaid + delta),
+ * rather than a detached renderScore that wipes the edit overlays. */
+export interface EditHandle {
+  /** Render `previewBase` composed with the current verified selections, in the
+   * grid layout with bands + the changed-bars delta; returns the diff summary. */
+  preview: (previewBase: Notation) => NotationDiff;
+  /** Revert the preview back to the committed effective, in place. */
+  clearPreview: () => void;
+}
 
 type NoteObj = Notation['bars'][number]['notes'][number];
 type BarObj = Notation['bars'][number];
@@ -104,7 +116,7 @@ export interface EditContext {
   editPanel: HTMLElement;
 }
 
-export function setupEditing(ctx: EditContext): void {
+export function setupEditing(ctx: EditContext): EditHandle {
   const { project, notation, model, sync, editToggle, saveBtn, scoreEl, base, editPanel } = ctx;
   const videoId = project.video_id;
   const numerator = notation.time_signature.numerator;
@@ -371,6 +383,64 @@ export function setupEditing(ctx: EditContext): void {
       afterRedraw: redrawBands,
     });
   };
+
+  // --- Re-tune preview through the edit layer (Q7 #2) --------------------
+  const flagChangedBars = (changed: number[]): void => {
+    for (const bv of model.bars) bv.row.classList.toggle('bar-changed', changed.includes(bv.index));
+  };
+
+  const preview = (previewBase: Notation): NotationDiff => {
+    // Compose the re-tuned base with the user's verified selections so their
+    // corrections stay overlaid (not "overwritten") in the preview.
+    const previewEff = applySelections(previewBase, persisted);
+    const diff = diffNotation(notation, previewEff);
+    // Reuse the current bars only when the re-tune didn't change the bar layout
+    // (the tuning knobs never do). If it did, skip the in-layer render — the diff
+    // summary still shows; nothing breaks.
+    const sameBars =
+      previewEff.bars.length === model.bars.length &&
+      previewEff.bars.every((b, i) => b.index === model.bars[i]!.index);
+    if (sameBars) {
+      for (const bv of model.bars) {
+        const bar = previewEff.bars.find((b) => b.index === bv.index);
+        if (bar) drawBar(bv, bar, true, persisted);
+      }
+      redrawBands();
+      flagChangedBars(diff.changedBars);
+    }
+    return diff;
+  };
+
+  const clearPreview = (): void => {
+    flagChangedBars([]);
+    rerenderAll(true); // redraw the committed effective + bands
+  };
+
+  return { preview, clearPreview };
+}
+
+/** The user-layer step of `compose`, client-side (Phase 2 has no system layer):
+ * overwrite each verified selection's lane × bar region in `base` with its
+ * frozen notes. Used to keep verifications visible in a re-tune preview. */
+function applySelections(base: Notation, selections: api.Selection[]): Notation {
+  const result = structuredClone(base);
+  for (const sel of selections) {
+    if (!sel.verified) continue; // only the verified user layer wins (matches backend compose)
+    const lane = sel.lane as LaneKey;
+    const byBar = new Map<number, NoteObj[]>();
+    for (const rn of sel.notes) {
+      const list = byBar.get(rn.bar) ?? [];
+      list.push(rn.note);
+      byBar.set(rn.bar, list);
+    }
+    for (let b = sel.bar_start; b <= sel.bar_end; b++) {
+      const bar = result.bars.find((x) => x.index === b);
+      if (!bar) continue;
+      bar.notes = bar.notes.filter((n) => laneOf(n.instrument) !== lane);
+      for (const note of byBar.get(b) ?? []) bar.notes.push(structuredClone(note));
+    }
+  }
+  return result;
 }
 
 const LANE_LABELS: Record<LaneKey, string> = {
