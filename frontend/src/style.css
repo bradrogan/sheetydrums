@@ -682,21 +682,16 @@ button#edit-toggle.active {
   color: #04121a;
 }
 
-/* Flam (grace-note) toggle — sits at the row's end, on for a present stroke. */
-.col-flam {
-  flex: 0 0 auto;
+/* Flam / grace ornament segment (snare + toms). Reuses .col-variant's segmented
+   look but with auto-width buttons so the 'flam' / 'grace' labels fit. */
+.col-ornament {
+  margin-left: 0.3rem;
+  margin-right: 0;
+}
+.col-ornament button {
+  width: auto;
   padding: 0.1rem 0.4rem;
   font-size: 0.72rem;
-  font-family: var(--font-hand);
-  background: #24242f;
-  color: var(--ink-soft);
-  border: 2px solid var(--ink);
-  border-radius: 6px;
-  box-shadow: none;
-}
-.col-flam.active {
-  background: var(--crayon-blue);
-  color: #04121a;
 }
 
 .edit-col-highlight {

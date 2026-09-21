@@ -52,7 +52,9 @@ VexFlow supports grace notes (`GraceNote` + `GraceNoteGroup`, with `slash` for t
 
 ## Manual editing
 
-In the beat editor (`edit.ts` column/beat popover), each present stroke gains a **"flam" toggle** (add/remove a same-instrument slashed grace note). Toggling records an edit like any other; once Phase 2 lands, that edit lives inside the active verified selection (the 2d hook is reserved for exactly this). Pre-Phase-2, it flows through the existing edit→save path.
+In the beat editor (`edit.ts` column/beat popover), a present **snare or tom** stroke gains a two-button ornament segment: **flam** (slashed grace) and **grace** (unslashed). Clicking the active one removes it. These are mutually exclusive states of the note's `grace` (`slashed: true` vs `false`, or absent). The ornament is scoped to snare + toms — a grace ornaments a primary stroke and is only played on those drums here; kick/hi-hat/cymbals get no ornament affordance.
+
+The grace lives on the note itself — it is **not** a new note in the sequence and consumes no metric time — so there is no new op kind. It rides on the frozen selection notes captured at Verify (`toInput` freezes live notation). Because a grace toggle records no op, `SelectionController` carries a `touched` flag so a grace-only draft still counts as edited and can be Verified. This matches the backend `_restore_attributes`/`region_fingerprint` treatment (step 1). Pre-Phase-2 it flows through the existing edit→save path.
 
 ## Sequencing
 

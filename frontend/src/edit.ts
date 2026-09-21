@@ -653,13 +653,15 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
       note.instrument = inst;
       recordOp({ kind: 'reclassify', bar: bar.index, position: note.position, from, to: inst });
     });
-  // Toggle a same-instrument slashed grace (a flam) on a present stroke. The grace
-  // lives on the note itself — no op — so it's frozen into the selection's notes
-  // on Verify (see SelectionController.markEdited) and drawn by render's attachGrace.
-  const toggleFlam = (note: NoteObj): void =>
+  // Set a same-instrument grace ornament on a present stroke: 'flam' (slashed
+  // grace) or 'grace' (unslashed), or 'none' to remove it. The grace lives on
+  // the note itself — no op, no new note in the sequence — so it's frozen into
+  // the selection's notes on Verify (see SelectionController.markEdited) and
+  // drawn by render's attachGrace. Snare + toms only (gated at the call site).
+  const setOrnament = (note: NoteObj, kind: 'flam' | 'grace' | 'none'): void =>
     mutate(() => {
-      if (note.grace) delete note.grace;
-      else note.grace = { instrument: note.instrument, slashed: true };
+      if (kind === 'none') delete note.grace;
+      else note.grace = { instrument: note.instrument, slashed: kind === 'flam' };
       markEdited();
     });
 
@@ -723,16 +725,29 @@ function openColumnPopover(args: ColumnPopoverArgs): void {
         row.appendChild(seg);
       }
 
-      // Flam toggle — a same-instrument grace note. Shown only for a present
-      // stroke, since a flam attaches to a primary hit.
-      if (note) {
-        const flam = document.createElement('button');
-        flam.type = 'button';
-        flam.className = `col-flam${note.grace ? ' active' : ''}`;
-        flam.textContent = 'flam';
-        flam.title = note.grace ? 'Flam on — click to remove' : 'Add a flam (grace note)';
-        flam.onclick = () => toggleFlam(note);
-        row.appendChild(flam);
+      // Flam / grace ornament — snare + toms only (a grace ornaments a primary
+      // stroke; scope the affordance to the drums it's played on). Two buttons:
+      // flam (slashed grace) and grace (unslashed); clicking the active one
+      // removes it. Shown only for a present stroke.
+      const ornamentable = laneRow.key === 'snare' || laneRow.key.startsWith('tom_');
+      if (note && ornamentable) {
+        const seg = document.createElement('div');
+        seg.className = 'col-variant col-ornament';
+        const cur: 'flam' | 'grace' | 'none' = note.grace
+          ? (note.grace.slashed === false ? 'grace' : 'flam')
+          : 'none';
+        const mkg = (label: string, kind: 'flam' | 'grace', title: string): void => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = label;
+          b.title = title;
+          if (cur === kind) b.className = 'active';
+          b.onclick = () => setOrnament(note, cur === kind ? 'none' : kind);
+          seg.appendChild(b);
+        };
+        mkg('flam', 'flam', 'Flam — slashed grace note (click again to remove)');
+        mkg('grace', 'grace', 'Grace note — unslashed (click again to remove)');
+        row.appendChild(seg);
       }
 
       staff.appendChild(row);
