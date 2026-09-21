@@ -750,35 +750,58 @@ button#edit-toggle.active {
 }
 
 /* Change-log panel (edit mode): manage/undo verified selections. */
-.changelog-panel {
-  position: fixed;
-  top: calc(var(--topbar-offset, 4rem) + 0.75rem);
-  right: 1rem;
-  z-index: 40;
-  width: 15rem;
-  max-width: 42vw;
-  max-height: 60vh;
-  overflow-y: auto;
-  background: #0f1f28;
-  color: #eafcff;
+/* Editing hub in the left panel: the Edit button + (in edit mode) the controls.
+   Replaces the old fixed change-log pane, which overlapped the topbar. */
+#edit-hub {
+  margin-top: 0.75rem;
+}
+.edit-hub-toggle {
+  width: 100%;
+}
+#edit-panel {
+  margin-top: 0.6rem;
   border: 2.5px solid var(--ink);
   border-radius: 12px;
+  background: #fff;
   box-shadow: var(--sticker);
+  overflow: hidden;
   font-size: 0.85rem;
 }
-.changelog-head {
+.edit-panel-head {
   padding: 0.4rem 0.7rem;
   font-family: var(--font-hand);
-  font-size: 1.05rem;
-  border-bottom: 1.5px solid rgba(234, 252, 255, 0.25);
+  font-size: 1.15rem;
+  background: var(--crayon-blue);
+  color: #04121a;
+  border-bottom: 2px solid var(--ink);
+}
+.edit-panel-hint {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.78rem;
+}
+.changelog-head {
+  padding: 0.35rem 0.7rem;
+  font-weight: 700;
+  color: #04121a;
+  border-top: 1px solid #e2e6ea;
+  border-bottom: 1px solid #e2e6ea;
+}
+.changelog-empty {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+}
+.changelog-list {
+  max-height: 40vh;
+  overflow-y: auto;
 }
 .changelog-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.35rem 0.7rem;
-  border-bottom: 1px solid rgba(234, 252, 255, 0.12);
+  padding: 0.3rem 0.7rem;
+  border-bottom: 1px solid #eef2f5;
+  color: #04121a;
 }
 .changelog-label {
   overflow: hidden;
@@ -799,6 +822,10 @@ button#edit-toggle.active {
 .changelog-row button.danger:hover {
   background: var(--crayon-red);
   color: #fff;
+}
+/* The doodle gives way to the editing controls while editing. */
+body.editing-mode #poo-doodle {
+  display: none;
 }
 
 /* Unsaved-changes modal (leaving edit mode). */

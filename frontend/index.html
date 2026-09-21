@@ -54,7 +54,6 @@
         <div class="project-topbar no-print">
           <button type="button" id="back-btn" class="ghost">← Projects</button>
           <div id="meta"></div>
-          <button type="button" id="edit-toggle" class="ghost">Edit</button>
           <button type="button" id="save-btn" hidden>Saved</button>
           <button type="button" id="tune-toggle" class="ghost">Tune</button>
           <button type="button" id="pdf-btn">Download PDF</button>
@@ -89,6 +88,13 @@
                   <input type="range" id="volume" min="0" max="100" value="100" />
                 </div>
               </div>
+            </div>
+            <!-- Editing hub: the Edit button lives here so it's clear the edit
+                 controls (verified-sections list, etc.) appear in this panel.
+                 The doodle below gives way to #edit-panel while editing. -->
+            <div id="edit-hub" class="no-print">
+              <button type="button" id="edit-toggle" class="ghost edit-hub-toggle">✎ Edit</button>
+              <div id="edit-panel" hidden></div>
             </div>
             <div id="poo-doodle" class="no-print" aria-hidden="true" title="drum harder"></div>
           </aside>

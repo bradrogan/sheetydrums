@@ -371,6 +371,8 @@ async function showProject(videoId: string): Promise<void> {
     selections: (project.selections ?? []) as unknown as api.Selection[],
     // Raw base notation, so removing a selection reverts its region to it.
     base: (project.base_notation ?? project.notation) as Notation,
+    // Left-panel container the editing controls render into.
+    editPanel: byId('edit-panel'),
   });
   await setupPlayback(project, model, sync);
   setupTuningPanel(project, events);
