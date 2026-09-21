@@ -15,11 +15,22 @@ Phases 0/1 made re-runs cheap and gave a human a manual "tweak a knob → re-run
 3. **Q3 — Bar-relative anchoring on exact rational position + tolerance** (not rounded sixteenths). Grid-agnostic, so it survives future triplet/tuplet detection. Time-based anchoring stays deferred; all anchor logic is isolated in `anchor.py` so a later swap is one file.
 4. **Q4 — Retune default = replay-with-conflict-review**, with all three modes (`replay-all`, `replay-with-conflict-review`, `take-fresh-clean`) offered per run. **Conflicts are auditionable** — each conflict in the review panel drives the existing drums-only playback + loop-region so the user confirms by ear before keep-reposition / discard.
 5. **Q5 — Write immutable version snapshots now** (write-only; no reader/UI until Phase 3/5). It's the audit trail Phase 3's param search scores against; skipping it means starting Phase 3 blind.
-6. **Q6 — One unified edit-session Save/Discard** (decided 2026-09-20, **revises the immediate-persist flow of 2c/2d**). Edit mode is a *session*: every change — verifying a selection, removing one, accepting a re-tune preview — mutates an in-memory working copy only. A single top-level **Save** persists the whole session; **Discard** reverts it to the entry snapshot. Nothing hits the server per action, and the re-tune's Accept/Discard leaves the tuning menu (the tuning menu only *re-runs*). See "Unified edit session" below.
+6. **Q6 — One unified edit-session Save/Discard.** ~~Edit mode is a session; a single top-level Save persists everything, Discard reverts all.~~ **SUPERSEDED by Q7** — bundling the deliberate, low-risk *verify* with the exploratory, high-risk *re-tune* under one gate is the flaw: a Discard to undo a bad tune would also throw away good verifies, and a Save would commit a possibly-worse tune alongside them.
+7. **Q7 — Split by kind** (decided 2026-09-20, supersedes Q6). Verify and re-tune are different *kinds* of change and get different controls:
+   - **Verify stays immediate** (POST on verify; Remove undoes). It's a deliberate, note-by-note, low-risk correction — persisted the moment you make it, never at risk from a tuning experiment.
+   - **Re-tune keeps its own Accept/Discard *in the tuning pane*** — that's its natural home (Accept/Discard only ever apply to a re-tune), so there's no reason to hoist it to a global control. The workflow in the pane must be clear and obvious: Re-run → preview (knobs lock) → Accept or Discard.
+   - **Safety net = versioning + revert** (this is what actually answers "a re-tune made it worse than it started", which no Save/Discard shape fixes on its own): 2g writes an immutable base snapshot on every base change (Q5), and a **"revert base to a previous generation / the original"** guarantees a re-tune is never a one-way door. **Priority** — today accepting a re-tune overwrites the old base with no way back.
+   - Re-tune **preview renders through the edit layer** (working effective with verifies overlaid + the delta), not a detached `renderScore`, so verified sections don't look "overwritten" during preview.
 
 ---
 
-## Unified edit session (Q6) — revises 2c/2d
+## ~~Unified edit session (Q6)~~ — SUPERSEDED by Q7 (split by kind)
+
+> Kept for history. Q7 replaces this: verify stays immediate (deliberate, safe);
+> re-tune keeps its own Accept/Discard in the tuning pane; a bad re-tune is made
+> recoverable by versioning + revert rather than by a global Discard. The
+> preview-through-the-edit-layer requirement below still holds (it's why verified
+> sections don't look overwritten during a re-tune preview).
 
 **Why.** 2c/2d persist each action immediately (Verify → `POST /selections`, Remove → `DELETE`, retune accept → `PUT` base) and the tuning preview renders straight to the score, bypassing the edit layer. That split surfaced real bugs: a re-tune preview could be stranded un-discardably, its highlight leaked into view mode, and verified sections looked "overwritten" during preview. The user wants one obvious Save/Discard governing everything in edit mode.
 
