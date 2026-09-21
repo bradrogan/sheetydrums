@@ -1286,6 +1286,30 @@ button.icon-btn {
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+/* Revert-to-a-version list (re-tune safety net). */
+.tuning-versions:not(:empty) {
+  margin-top: 0.6rem;
+  border-top: 1px solid #e2e6ea;
+  padding-top: 0.5rem;
+}
+.tuning-versions-head {
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+.tuning-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  font-size: 0.82rem;
+}
+.tuning-version-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tuning-actions button.accept {
   background: var(--crayon-green);
   color: #08160a;

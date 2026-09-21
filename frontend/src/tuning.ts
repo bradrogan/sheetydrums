@@ -121,8 +121,11 @@ export function setupTuning(ctx: TuningContext): void {
   discardBtn.hidden = true;
   actions.append(retuneBtn, resetAllBtn, acceptBtn, discardBtn);
 
-  panel.append(header, diagBox, knobsBox, status, diffBox, actions);
+  const versionsBox = el('div', 'tuning-versions');
+
+  panel.append(header, diagBox, knobsBox, status, diffBox, actions, versionsBox);
   void refreshDiagnostics();
+  void refreshVersions();
 
   // === controls ==========================================================
 
@@ -220,6 +223,42 @@ export function setupTuning(ctx: TuningContext): void {
   }
 
   // === diagnostics + retune =============================================
+
+  // The re-tune safety net: list base snapshots (original + before each re-tune)
+  // so a re-tune that made things worse can always be reverted. Reverting
+  // snapshots the current state first, so it's itself undoable.
+  async function refreshVersions(): Promise<void> {
+    let versions;
+    try {
+      versions = await api.listVersions(videoId);
+    } catch {
+      return; // non-critical; leave the section empty
+    }
+    versionsBox.innerHTML = '';
+    if (versions.length === 0) return;
+    versionsBox.appendChild(el('div', 'tuning-versions-head')).textContent = 'Revert base to a version';
+    for (const v of [...versions].reverse()) {
+      const row = el('div', 'tuning-version-row');
+      const label = el('span', 'tuning-version-label');
+      const bpm = v.tempo_bpm ? `${Math.round(v.tempo_bpm)} BPM` : '';
+      label.textContent = `${v.label ?? 'version'} · ${bpm} · ${v.n_bars} bars`;
+      const btn = button('Revert', 'ghost', () => void doRevert(v.version_id));
+      row.append(label, btn);
+      versionsBox.appendChild(row);
+    }
+  }
+
+  async function doRevert(versionId: string): Promise<void> {
+    if (!confirm('Revert the base to this version? Your current state is snapshotted first, so this is undoable.')) return;
+    try {
+      await api.revertVersion(videoId, versionId);
+    } catch (err) {
+      status.classList.remove('running');
+      status.textContent = `Revert failed: ${errMsg(err)}`;
+      return;
+    }
+    ctx.reload();
+  }
 
   async function refreshDiagnostics(): Promise<void> {
     try {

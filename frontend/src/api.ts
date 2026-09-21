@@ -240,6 +240,32 @@ export async function clearSystemPass(videoId: string): Promise<void> {
   await ok(await fetch(`/projects/${encodeURIComponent(videoId)}/system`, { method: 'DELETE' }));
 }
 
+// === Base version snapshots + revert (re-tune safety net) ===
+export interface Version {
+  version_id: string;
+  label: string | null;
+  created_at: string | null;
+  tempo_bpm: number | null;
+  n_bars: number;
+  n_selections: number;
+}
+
+export async function listVersions(videoId: string): Promise<Version[]> {
+  const resp = await ok(await fetch(`/projects/${encodeURIComponent(videoId)}/versions`));
+  return ((await resp.json()) as { versions: Version[] }).versions;
+}
+
+export async function revertVersion(videoId: string, versionId: string): Promise<Project> {
+  const resp = await ok(
+    await fetch(`/projects/${encodeURIComponent(videoId)}/revert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version_id: versionId }),
+    }),
+  );
+  return (await resp.json()) as Project;
+}
+
 // === Settings: where projects are stored ===
 export interface Settings {
   projects_dir: string;
