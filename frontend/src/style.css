@@ -215,6 +215,14 @@ button:disabled {
   min-width: 0;
 }
 
+/* Re-tune preview: bars the re-run changed, so it's obvious what moved. */
+.bar-row.bar-changed {
+  background: rgba(217, 102, 15, 0.12);
+  border-radius: var(--wobble);
+  outline: 2px dashed #d9660f;
+  outline-offset: 2px;
+}
+
 .bar-label {
   font-size: 0.75rem;
   color: #888;

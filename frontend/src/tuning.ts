@@ -67,7 +67,9 @@ export interface TuningContext {
   project: Project;
   notation: Notation;
   panel: HTMLElement;
-  renderPreview: (n: Notation) => void;
+  /** Render the preview notation; `changedBars` (from the diff) are flagged on
+   * the score so it's visible what the re-tune changed. */
+  renderPreview: (n: Notation, changedBars?: number[]) => void;
   reload: () => void;
   onClose: () => void;
 }
@@ -255,9 +257,10 @@ export function setupTuning(ctx: TuningContext): void {
         activeSource = null;
         preview = p;
         setRunning(false);
-        status.textContent = 'Preview ready — review below, then Accept or Discard.';
-        renderDiff(diffBox, diffNotation(ctx.notation, p.notation));
-        ctx.renderPreview(p.notation);
+        status.textContent = 'Preview ready — changed bars are highlighted. Accept or Discard.';
+        const d = diffNotation(ctx.notation, p.notation);
+        renderDiff(diffBox, d);
+        ctx.renderPreview(p.notation, d.changedBars);
         acceptBtn.hidden = discardBtn.hidden = false;
       },
       onFailure: (error) => {

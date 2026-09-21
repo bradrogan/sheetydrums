@@ -329,7 +329,7 @@ function teardownPlayer(): void {
   activeTransport = null;
 }
 
-async function showProject(videoId: string): Promise<void> {
+async function showProject(videoId: string, opts?: { edit?: boolean }): Promise<void> {
   showOnly(projectSection);
   teardownPlayer();
   byId('meta').textContent = 'Loading…';
@@ -376,6 +376,10 @@ async function showProject(videoId: string): Promise<void> {
   });
   await setupPlayback(project, model, sync);
   setupTuningPanel(project, events);
+  // Re-enter edit mode after a rebuild requested it (e.g. accepting/discarding a
+  // re-tune, which happens from edit mode) so the verified sections stay visible
+  // instead of dropping the user to the plain view.
+  if (opts?.edit) (byId('edit-toggle') as HTMLButtonElement).click();
 }
 
 // Wire the "Tune" toggle + manual params panel (Phase 1). The panel lives in the
@@ -410,13 +414,21 @@ function setupTuningPanel(project: Project, events: Notation): void {
         // preview replaces the score wholesale, stranding the edit layer's
         // floating overlays on a now-detached model, so drop them; Accept/Discard
         // reloads the project, which rebuilds them cleanly.
-        renderPreview: (n) => {
+        renderPreview: (n, changedBars) => {
           document
-            .querySelectorAll('.changelog-panel, .selection-toolbar, .edit-popover')
+            .querySelectorAll('.selection-toolbar, .edit-popover')
             .forEach((e) => e.remove());
           renderScore(byId('score'), n, { grid: true });
+          // Flag the bars the re-tune changed so it's obvious what moved.
+          for (const idx of changedBars ?? []) {
+            byId('score')
+              .querySelector(`.bar-row[data-bar-index="${idx}"]`)
+              ?.classList.add('bar-changed');
+          }
         },
-        reload: () => { void showProject(project.video_id); },
+        // Re-tune runs from edit mode; stay there on accept/discard so the
+        // verified sections + delta coloring remain visible.
+        reload: () => { void showProject(project.video_id, { edit: true }); },
         onClose: close,
       });
       panel.dataset.ready = '1';
