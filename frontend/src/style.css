@@ -1310,7 +1310,7 @@ button.icon-btn {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tuning-actions button.accept {
+.tuning-review-actions button.accept {
   background: var(--crayon-green);
   color: #08160a;
   border-color: var(--crayon-green);
@@ -1319,6 +1319,47 @@ button.icon-btn {
   background: var(--crayon-blue);
   color: #04121a;
   border-color: var(--crayon-blue);
+}
+
+.tuning-intro {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+/* Preview review block — a framed "decide" step, visible only while a preview
+   is pending. The dashed accent border makes it read as a distinct callout so
+   the "nothing is saved until you Accept" contract is obvious. */
+.tuning-review[hidden] {
+  display: none;
+}
+.tuning-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border: 2px dashed var(--crayon-blue);
+  border-radius: var(--wobble);
+  background: rgba(80, 140, 220, 0.08);
+}
+.tuning-review-head {
+  font-family: var(--font-hand);
+  font-size: 1.15rem;
+}
+.tuning-review-hint {
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+.tuning-review-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* While reviewing a preview the knobs + idle actions are locked; dim them so
+   it's visually clear the only moves are Accept/Discard. */
+.tuning-panel.reviewing .tuning-knobs,
+.tuning-panel.reviewing .tuning-actions {
+  opacity: 0.45;
 }
 
 /* === Projects list header + Settings modal === */

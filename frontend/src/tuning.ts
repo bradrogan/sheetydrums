@@ -109,23 +109,43 @@ export function setupTuning(ctx: TuningContext): void {
   });
   for (const c of controls) knobsBox.appendChild(c.el);
 
-  const status = el('div', 'tuning-status muted');
-  const diffBox = el('div', 'tuning-diff');
+  // A one-line description of the loop so the pane reads top-to-bottom as a
+  // workflow (diagnostics → adjust → preview → decide → revert-if-worse).
+  const intro = el('div', 'tuning-intro muted');
+  intro.textContent =
+    'Adjust the knobs, Re-run to preview the result, then Accept to save or Discard to undo.';
 
+  const status = el('div', 'tuning-status muted');
+
+  // Idle actions — adjust + preview. Always visible.
   const actions = el('div', 'tuning-actions');
   const retuneBtn = button('Re-run preview', 'primary', () => void doRetune());
   // No status text on reset — the per-knob "overridden" highlight already shows
   // state, and a transient line shifts the layout. Just clear + reset the knobs.
   const resetAllBtn = button('Reset all', 'ghost', () => { for (const c of controls) c.reset(); afterParamChange(); });
-  const acceptBtn = button('Accept', 'accept', () => void doAccept());
+  actions.append(retuneBtn, resetAllBtn);
+
+  // Review block — shown ONLY while a preview is pending. Framing the diff +
+  // Accept/Discard as their own step (with the "not saved yet" heading) makes
+  // the contract obvious: a preview changes nothing on disk until you Accept.
+  const review = el('div', 'tuning-review');
+  review.hidden = true;
+  const reviewHead = el('div', 'tuning-review-head');
+  reviewHead.textContent = 'Preview — not saved yet';
+  const reviewHint = el('div', 'tuning-review-hint muted');
+  reviewHint.textContent =
+    'Changed bars are highlighted on the score and your verified sections are kept. ' +
+    'Accept to save this as the new base, or Discard to go back.';
+  const diffBox = el('div', 'tuning-diff');
+  const reviewActions = el('div', 'tuning-review-actions');
+  const acceptBtn = button('Accept & save', 'accept', () => void doAccept());
   const discardBtn = button('Discard', 'ghost', () => doDiscard());
-  acceptBtn.hidden = true;
-  discardBtn.hidden = true;
-  actions.append(retuneBtn, resetAllBtn, acceptBtn, discardBtn);
+  reviewActions.append(acceptBtn, discardBtn);
+  review.append(reviewHead, reviewHint, diffBox, reviewActions);
 
   const versionsBox = el('div', 'tuning-versions');
 
-  panel.append(header, diagBox, knobsBox, status, diffBox, actions, versionsBox);
+  panel.append(header, intro, diagBox, knobsBox, actions, status, review, versionsBox);
   void refreshDiagnostics();
   void refreshVersions();
 
@@ -217,10 +237,8 @@ export function setupTuning(ctx: TuningContext): void {
   function afterParamChange(): void {
     if (preview) {
       preview = null;
-      diffBox.innerHTML = '';
+      exitReview();
       status.textContent = '';
-      acceptBtn.hidden = true;
-      discardBtn.hidden = true;
     }
   }
 
@@ -290,9 +308,23 @@ export function setupTuning(ctx: TuningContext): void {
     }
   };
 
+  // Enter/leave the "reviewing a preview" state. The `reviewing` class dims the
+  // now-locked knobs so it's visually clear the only moves are Accept/Discard.
+  const enterReview = (): void => {
+    review.hidden = false;
+    panel.classList.add('reviewing');
+    lockForPreview(true);
+  };
+  const exitReview = (): void => {
+    review.hidden = true;
+    panel.classList.remove('reviewing');
+    diffBox.innerHTML = '';
+    lockForPreview(false);
+  };
+
   async function doRetune(): Promise<void> {
     activeSource?.close();
-    acceptBtn.hidden = discardBtn.hidden = true;
+    review.hidden = true;
     diffBox.innerHTML = '';
     setRunning(true);
     status.textContent = 'Starting re-run… (the first, uncached run can take a while)';
@@ -310,11 +342,10 @@ export function setupTuning(ctx: TuningContext): void {
         activeSource = null;
         preview = p;
         setRunning(false);
-        status.textContent = 'Preview ready — changed bars are highlighted, your verified sections kept. Accept or Discard.';
+        status.textContent = ''; // the review block's heading + hint carry the state now
         const d = ctx.renderPreview(p.notation); // composes with selections + renders + returns the diff
         renderDiff(diffBox, d);
-        acceptBtn.hidden = discardBtn.hidden = false;
-        lockForPreview(true); // only Accept/Discard until this preview is resolved
+        enterReview(); // reveal Accept/Discard; lock knobs until resolved
       },
       onFailure: (error) => {
         activeSource = null;
@@ -343,9 +374,7 @@ export function setupTuning(ctx: TuningContext): void {
     activeSource = null;
     preview = null;
     ctx.clearPreview(); // revert in place through the edit layer — no reload/jump
-    lockForPreview(false); // knobs usable again
-    acceptBtn.hidden = discardBtn.hidden = true;
-    diffBox.innerHTML = '';
+    exitReview(); // hide the review block, unlock knobs
     status.textContent = '';
   }
 }
