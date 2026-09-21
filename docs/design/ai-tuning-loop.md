@@ -230,6 +230,36 @@ fast cached re-run, a 2–3-knob search finishes in a handful of seconds. The se
 is what makes the result *provably* better on the objective rather than merely
 plausible — the LLM can be small/imperfect and it still converges.
 
+**(c) Capped auto-loop over stage (a)+(b).** Stage (b) converges only over the
+knobs stage (a) proposed; if those knobs can't reproduce the verified selection,
+the search plateaus below a match threshold and (a)+(b) as a single pass would
+just hand back a poor best. So wrap them in a bounded outer loop (decided with
+the user 2026-09-20):
+
+1. Run (a)+(b). If the best candidate's score ≥ a **match threshold** against the
+   verified selection, stop — converged.
+2. Otherwise re-invoke the proposer (a) for another round, feeding it the
+   **residual mismatch** (which of the selection's labels are still wrong after
+   the best candidate) plus the knobs already tried, so it proposes a *different*
+   knob set / stage rather than re-searching the same axis. Search (b) again.
+3. Stop when converged, when a **round cap** (default 3) is hit, or when a round
+   yields no score improvement (early stop). Return the best params **across all
+   rounds** + the before/after preview.
+
+The cap and early-stop bound cost (each round is still only ~20–40 cached
+re-runs); the residual-driven re-proposal is what makes successive rounds explore
+new knobs instead of thrashing one. The loop wraps the Phase 3 heuristic proposer
+and the Phase 4 LLM proposer identically.
+
+**When even the capped loop can't match it.** Some errors aren't reachable by any
+parameter (e.g. an onset the transcriber never fires on at any threshold). The
+loop then returns its best *partial* match and says so — but this is not a
+failure mode for the user's data: the verified selection is the **user layer**,
+which always wins at compose (blocks 1, 6), so the manual correction is what's
+rendered/exported regardless of whether tuning could reproduce it. Tuning's job
+is to *propagate* that fix to similar passages (the coverage term) and cut future
+manual work — never a precondition for the fix itself to hold.
+
 Reuse: the scoring is the `_harness.py` matcher; "edits as labels" is the same shape
 as "tab as labels".
 
