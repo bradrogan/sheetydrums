@@ -754,12 +754,14 @@ button#edit-toggle.active {
    Replaces the old fixed change-log pane, which overlapped the topbar. */
 #edit-hub {
   margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 .edit-hub-toggle {
   width: 100%;
 }
 #edit-panel {
-  margin-top: 0.6rem;
   border: 2.5px solid var(--ink);
   border-radius: 12px;
   background: #fff;
