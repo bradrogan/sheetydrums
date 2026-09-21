@@ -268,6 +268,10 @@ export function setupEditing(ctx: EditContext): void {
     editToggle.textContent = 'Done';
     editToggle.classList.add('active');
     scoreEl.classList.add('editing');
+    // Gate the Tune panel to edit mode: its preview + changes are only legible
+    // in the grid layout, so the toolbar button is shown only while editing (CSS
+    // keys off this class).
+    document.body.classList.add('editing-mode');
     rerenderAll(true); // fixed 16th grid so notes stay put
     renderChangelog();
     sync.refresh(); // reposition the retained playhead after the relayout
@@ -278,6 +282,12 @@ export function setupEditing(ctx: EditContext): void {
     editToggle.textContent = 'Edit';
     editToggle.classList.remove('active');
     scoreEl.classList.remove('editing');
+    // Leaving edit mode hides the Tune button (CSS) — also close the panel if
+    // it's open so it doesn't linger with no way to dismiss it.
+    document.body.classList.remove('editing-mode');
+    document.getElementById('tune-toggle')?.classList.remove('active');
+    const tuningPanel = document.getElementById('tuning-panel');
+    if (tuningPanel) tuningPanel.hidden = true;
     editSession.dirty = false;
     sel.clear();
     hideToolbar();

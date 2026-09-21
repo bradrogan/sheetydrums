@@ -1047,10 +1047,38 @@ button#edit-toggle.active {
 }
 
 /* === Tuning panel (Phase 1 manual params — dev tool) ===================== */
+/* Tune is only useful while editing (its preview + changes read in the grid
+   layout), so hide the button outside edit mode. edit.ts sets .editing-mode. */
+body:not(.editing-mode) #tune-toggle {
+  display: none;
+}
 button#tune-toggle.active {
   background: var(--crayon-green);
   color: #08160a;
   border-color: var(--crayon-green);
+}
+
+/* Prominent re-run progress: a spinner + un-muted status so a long (uncached)
+   re-run doesn't look like nothing happened. */
+.tuning-status.running {
+  color: var(--ink);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.tuning-status.running::before {
+  content: '';
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: tuning-spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes tuning-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Drawer sticky to the bottom of the SCORE column only — the left player pane
