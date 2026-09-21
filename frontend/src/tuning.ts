@@ -67,7 +67,9 @@ export interface TuningContext {
   project: Project;
   notation: Notation;
   panel: HTMLElement;
-  renderPreview: (n: Notation) => void;
+  /** Render the preview notation; `changedBars` (from the diff) are flagged on
+   * the score so it's visible what the re-tune changed. */
+  renderPreview: (n: Notation, changedBars?: number[]) => void;
   reload: () => void;
   onClose: () => void;
 }
@@ -235,6 +237,18 @@ export function setupTuning(ctx: TuningContext): void {
     status.classList.toggle('running', on);
   };
 
+  // While a preview is pending, the score is showing un-committed notes, so the
+  // knobs + Re-run + Reset are locked — the only valid moves are Accept or
+  // Discard. This prevents changing a param (e.g. Reset all) from silently
+  // clearing the preview and stranding the rendered notes with no way to revert.
+  const lockForPreview = (locked: boolean): void => {
+    retuneBtn.disabled = locked;
+    resetAllBtn.disabled = locked;
+    for (const input of knobsBox.querySelectorAll('input, select')) {
+      (input as HTMLInputElement | HTMLSelectElement).disabled = locked;
+    }
+  };
+
   async function doRetune(): Promise<void> {
     activeSource?.close();
     acceptBtn.hidden = discardBtn.hidden = true;
@@ -255,10 +269,12 @@ export function setupTuning(ctx: TuningContext): void {
         activeSource = null;
         preview = p;
         setRunning(false);
-        status.textContent = 'Preview ready — review below, then Accept or Discard.';
-        renderDiff(diffBox, diffNotation(ctx.notation, p.notation));
-        ctx.renderPreview(p.notation);
+        status.textContent = 'Preview ready — changed bars are highlighted. Accept or Discard.';
+        const d = diffNotation(ctx.notation, p.notation);
+        renderDiff(diffBox, d);
+        ctx.renderPreview(p.notation, d.changedBars);
         acceptBtn.hidden = discardBtn.hidden = false;
+        lockForPreview(true); // only Accept/Discard until this preview is resolved
       },
       onFailure: (error) => {
         activeSource = null;

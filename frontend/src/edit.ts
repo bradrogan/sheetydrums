@@ -99,10 +99,13 @@ export interface EditContext {
   /** The raw base notation (pre-composition). Removing a selection reverts its
    * lane × bar region to this. */
   base: Notation;
+  /** Left-panel container the editing controls (verified-sections list) render
+   * into while editing. */
+  editPanel: HTMLElement;
 }
 
 export function setupEditing(ctx: EditContext): void {
-  const { project, notation, model, sync, editToggle, saveBtn, scoreEl, base } = ctx;
+  const { project, notation, model, sync, editToggle, saveBtn, scoreEl, base, editPanel } = ctx;
   const videoId = project.video_id;
   const numerator = notation.time_signature.numerator;
   const maxSixteenth = Math.round((numerator / notation.time_signature.denominator) * SUBDIV);
@@ -164,8 +167,7 @@ export function setupEditing(ctx: EditContext): void {
     toolbar.appendChild(mkBtn('Cancel', '', () => { sel.clear(); hideToolbar(); redrawBands(); }));
   };
 
-  // --- Change-log panel: list + undo persisted verified selections ------
-  let changelog: HTMLElement | null = null;
+  // --- Left editing panel: verified-sections list + undo -----------------
 
   // Removing a selection reverts its lane × bar region to the base generation.
   const revertRegionToBase = (lane: LaneKey, start: number, end: number): void => {
@@ -193,24 +195,27 @@ export function setupEditing(ctx: EditContext): void {
     revertRegionToBase(target.lane as LaneKey, target.bar_start, target.bar_end);
     saved = structuredClone(notation); // the reverted state is the new baseline
     redrawBands();
-    renderChangelog();
+    renderEditPanel();
   };
 
-  // A docked panel (edit mode only) listing every verified selection with a
-  // Remove (undo) button. Hidden in view mode and when there are none.
-  const renderChangelog = (): void => {
-    if (!sync.editMode || persisted.length === 0) {
-      changelog?.remove();
-      changelog = null;
+  // The left-panel editing hub content (edit mode only): a short hint + the
+  // verified-sections list, each with a Remove (undo) button. Cleared and
+  // hidden in view mode so the doodle can show instead.
+  const renderEditPanel = (): void => {
+    editPanel.innerHTML = '';
+    if (!sync.editMode) {
+      editPanel.hidden = true;
       return;
     }
-    if (!changelog) {
-      changelog = document.createElement('div');
-      changelog.className = 'changelog-panel';
-      document.body.appendChild(changelog);
+    editPanel.hidden = false;
+    editPanel.appendChild(el('div', 'edit-panel-head', 'Editing'));
+    editPanel.appendChild(el('div', 'edit-panel-hint muted',
+      'Drag across a lane × bars (or tap a beat), correct it, then Verify.'));
+    editPanel.appendChild(el('div', 'changelog-head', `Verified sections (${persisted.length})`));
+    if (persisted.length === 0) {
+      editPanel.appendChild(el('div', 'changelog-empty muted', 'None yet.'));
+      return;
     }
-    changelog.innerHTML = '';
-    changelog.appendChild(el('div', 'changelog-head', `Verified (${persisted.length})`));
     const list = el('div', 'changelog-list');
     for (const s of [...persisted].sort((a, b) => a.bar_start - b.bar_start || a.lane.localeCompare(b.lane))) {
       const row = el('div', 'changelog-row');
@@ -219,7 +224,7 @@ export function setupEditing(ctx: EditContext): void {
       row.appendChild(mkBtn('Remove', 'danger', () => void removeSelection(s)));
       list.appendChild(row);
     }
-    changelog.appendChild(list);
+    editPanel.appendChild(list);
   };
 
   const commit = async (): Promise<boolean> => {
@@ -243,7 +248,7 @@ export function setupEditing(ctx: EditContext): void {
     // after this commit, not the committed ones (which are already persisted).
     saved = structuredClone(notation);
     redrawBands();
-    renderChangelog();
+    renderEditPanel();
     return true;
   };
 
@@ -273,7 +278,7 @@ export function setupEditing(ctx: EditContext): void {
     // keys off this class).
     document.body.classList.add('editing-mode');
     rerenderAll(true); // fixed 16th grid so notes stay put
-    renderChangelog();
+    renderEditPanel();
     sync.refresh(); // reposition the retained playhead after the relayout
   };
 
@@ -291,7 +296,7 @@ export function setupEditing(ctx: EditContext): void {
     editSession.dirty = false;
     sel.clear();
     hideToolbar();
-    renderChangelog(); // editMode is now false → removes the panel
+    renderEditPanel(); // editMode is now false → removes the panel
     closePopover();
     rerenderAll(false); // back to proportional view
     sync.refresh();
