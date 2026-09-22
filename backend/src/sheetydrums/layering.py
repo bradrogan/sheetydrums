@@ -12,6 +12,7 @@ See docs/design/phase2-plan.md §1.5.
 from __future__ import annotations
 
 import copy
+from fractions import Fraction
 from typing import Any
 
 from sheetydrums.anchor import (
@@ -251,3 +252,97 @@ def reconcile_selections(
                 })
 
     return kept, conflicts
+
+
+# === System-layer delta (the "fix the rest" pass output) ================
+
+
+def _note_near(
+    notes: list[dict[str, Any]], position: str, tol: Fraction, instrument: str | None = None
+) -> dict[str, Any] | None:
+    """The note within `tol` of `position` (optionally of `instrument`), nearest
+    first, or None. Instrument-agnostic when `instrument` is None."""
+    target = parse_position(position)
+    best: dict[str, Any] | None = None
+    best_dist: Fraction | None = None
+    for n in notes:
+        if instrument is not None and n["instrument"] != instrument:
+            continue
+        dist = abs(parse_position(n["position"]) - target)
+        if dist <= tol and (best_dist is None or dist < best_dist):
+            best, best_dist = n, dist
+    return best
+
+
+def _diff_bar(
+    bar_index: int, base_notes: list[dict[str, Any]], cand_notes: list[dict[str, Any]], tol: Fraction
+) -> list[dict[str, Any]]:
+    """System ops turning `base_notes` into `cand_notes` for one bar (both already
+    restricted to the targeted lanes). Exact (position, instrument) matches emit
+    nothing; a same-position instrument change is a `reclassify`; the rest are
+    `delete` (base leftover) / `add` (candidate leftover)."""
+    ops: list[dict[str, Any]] = []
+    base_left = list(base_notes)
+    cand_left = list(cand_notes)
+
+    # 1) Exact matches (same instrument within tol) — unchanged, no op.
+    for b in list(base_left):
+        m = _note_near(cand_left, b["position"], tol, b["instrument"])
+        if m is not None:
+            base_left.remove(b)
+            cand_left.remove(m)
+
+    # 2) Same-slot instrument change → reclassify (keeps the base position).
+    for b in list(base_left):
+        m = _note_near(cand_left, b["position"], tol)
+        if m is not None:
+            ops.append({
+                "kind": "reclassify", "bar": bar_index, "position": b["position"],
+                "from": b["instrument"], "to": m["instrument"], "origin": "system",
+            })
+            base_left.remove(b)
+            cand_left.remove(m)
+
+    # 3) Leftovers: base notes removed, candidate notes introduced.
+    for b in base_left:
+        ops.append({
+            "kind": "delete", "bar": bar_index, "position": b["position"],
+            "instrument": b["instrument"], "origin": "system",
+        })
+    for c in cand_left:
+        ops.append({
+            "kind": "add", "bar": bar_index, "position": c["position"],
+            "instrument": c["instrument"], "duration": c.get("duration", "1/8"),
+            "origin": "system",
+        })
+    return ops
+
+
+def notation_to_system_ops(
+    base: dict[str, Any],
+    candidate: dict[str, Any],
+    lanes: set[str],
+    selections: list[dict[str, Any]] | None = None,
+    tol: Fraction = DEFAULT_TOL,
+) -> list[dict[str, Any]]:
+    """The system-layer delta of a "fix the rest" pass (phase3-plan.md §3c):
+    the ops (origin='system') that turn `base` into `candidate` **within
+    `lanes`** — the lanes the search targeted (D4), so an unrelated lane the
+    re-tune jittered is never rewritten. Ops whose (bar, lane) fall inside a
+    verified region are omitted: user edits are inviolable and `compose` would
+    drop them anyway — omitting keeps the stored delta honest.
+
+    Bars absent from the candidate are left untouched (no ops). `move` is not
+    emitted — a parameter change relabels/adds/drops onsets, it doesn't nudge an
+    existing note's position — so a shifted note reads as a delete + add."""
+    regions = verified_regions(selections)
+    cand_by_index = {b["index"]: b for b in candidate.get("bars", [])}
+    ops: list[dict[str, Any]] = []
+    for bar in base.get("bars", []):
+        cand_bar = cand_by_index.get(bar["index"])
+        if cand_bar is None:
+            continue
+        base_notes = [n for n in bar["notes"] if lane_of(n["instrument"]) in lanes]
+        cand_notes = [n for n in cand_bar["notes"] if lane_of(n["instrument"]) in lanes]
+        ops.extend(_diff_bar(bar["index"], base_notes, cand_notes, tol))
+    return [op for op in ops if not _op_in_verified(op, regions)]

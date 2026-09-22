@@ -324,6 +324,83 @@ def _run_retune_job(job: JobState, video_id: str, params_dict: dict[str, Any]) -
         job.progress.put(_DONE)
 
 
+def _run_fix_the_rest_job(job: JobState, video_id: str, selection_id: str | None) -> None:
+    """Worker thread: the "fix the rest of the song" pass (Phase 3c). Runs the
+    edit-scored parameter search against the project's verified selections
+    (`selection_id` names the trigger; the objective is over ALL of them — D1),
+    diffs the winning candidate into a system-layer delta over the unchanged base
+    (D2), and stashes a *preview* on the job. Nothing is saved — the client
+    accepts (POST /system) or discards."""
+    from sheetydrums.cli import serialize_to_schema
+    from sheetydrums.config import CLIConfig
+    from sheetydrums.factory import build_pipeline
+    from sheetydrums.fetch import download_audio
+    from sheetydrums.layering import compose, notation_to_system_ops
+    from sheetydrums.params import PipelineParams
+    from sheetydrums.search.knobs import targeted_lanes
+    from sheetydrums.search.loop import fix_the_rest
+
+    def on_progress(msg: str) -> None:
+        job.progress.put(msg)
+
+    try:
+        project = store.load_project(video_id)
+        if project is None:
+            job.error = f"No project for video_id {video_id!r}"
+            return
+        selections = [s for s in (project.get("selections") or []) if s.get("verified")]
+        if not selections:
+            job.error = "No verified sections to learn from — verify a correction first."
+            return
+        url = (project.get("source") or {}).get("url")
+        if not url:
+            job.error = "Project has no source URL to re-fetch audio from."
+            return
+
+        on_progress("preparing audio…")
+        downloaded = download_audio(url)  # idempotent — hits the local cache
+        config: CLIConfig = CLIConfig(use_drumsep=True, verbose=False)
+        cache_dir = store.stages_dir(video_id)
+        base_params: dict[str, Any] = project.get("params") or PipelineParams().to_dict()
+
+        def run(params_dict: dict[str, Any]) -> dict[str, Any]:
+            pipeline = build_pipeline(
+                config, params=PipelineParams.from_dict(params_dict), cache_dir=cache_dir
+            )
+            return serialize_to_schema(pipeline.transcribe(downloaded.path))
+
+        on_progress(f"searching params against {len(selections)} verified section(s)…")
+        outcome = fix_the_rest(base_params, run, selections)
+        lanes = targeted_lanes(set(outcome.tried_knobs))
+        base: dict[str, Any] = project.get("notation") or {}
+        candidate = run(outcome.params)  # cached upstream — cheap
+        ops = notation_to_system_ops(base, candidate, lanes, selections)
+        pass_id = "pass_" + uuid.uuid4().hex
+        effective, origin_map = compose(base, {"pass_id": pass_id, "ops": ops}, selections)
+        on_progress(
+            f"done: F1 {outcome.score.f1:.0%}"
+            f"{' (converged)' if outcome.converged else ' (best partial)'}"
+            f" · {len(ops)} change(s) in {sorted(lanes) or 'no'} lane(s)"
+        )
+        job.result = {
+            "preview": True,
+            "video_id": video_id,
+            "pass_id": pass_id,
+            "ops": ops,
+            "params": outcome.params,
+            "effective": effective,
+            "origin_map": {str(k): v for k, v in origin_map.items()},
+            "converged": outcome.converged,
+            "score_f1": outcome.score.f1,
+            "targeted_lanes": sorted(lanes),
+        }
+    except Exception as exc:
+        job.error = f"{type(exc).__name__}: {exc}"
+    finally:
+        job.done = True
+        job.progress.put(_DONE)
+
+
 @app.get("/jobs/{job_id}/stream")
 async def stream_job(job_id: str) -> StreamingResponse:
     """SSE stream of progress messages followed by a single terminal event.
@@ -734,6 +811,34 @@ async def retune(video_id: str, req: RetuneRequest = Body(...)) -> dict[str, Any
     return {"status": "job", "job_id": job_id}
 
 
+class FixTheRestRequest(BaseModel):
+    # The selection the user clicked "fix the rest for" — advisory; the search's
+    # objective is over ALL verified selections (D1). Optional so the button can
+    # also mean "fix using everything I've verified".
+    selection_id: str | None = None
+
+
+@app.post("/projects/{video_id}/fix-the-rest")
+async def fix_the_rest_pass(video_id: str, req: FixTheRestRequest = Body(...)) -> dict[str, Any]:
+    """Run the edit-scored parameter search against the project's verified
+    selections and stream a *preview* system-layer delta (via GET
+    /jobs/{id}/stream, terminal `result` event). Nothing is saved until the
+    client accepts it (POST /projects/{id}/system)."""
+    if store.load_project(video_id) is None:
+        raise HTTPException(404, f"No project for video_id {video_id!r}")
+    job_id: str = uuid.uuid4().hex
+    job: JobState = JobState()
+    async with _migration_lock:  # see `_migration_lock`
+        _prune_jobs()
+        _jobs[job_id] = job
+        threading.Thread(
+            target=_run_fix_the_rest_job,
+            args=(job, video_id, req.selection_id),
+            daemon=True,
+        ).start()
+    return {"status": "job", "job_id": job_id}
+
+
 @app.delete("/projects/{video_id}")
 async def delete_project(video_id: str) -> dict[str, Any]:
     removed = store.delete_project(video_id)
@@ -884,6 +989,45 @@ async def delete_selection(video_id: str, sid: str) -> dict[str, Any]:
         # available even when the layer currently composes to nothing valid.
         _save_selections_or_422(project, remaining, check_composition=False)
     return {"deleted": sid}
+
+
+class SystemPassBody(BaseModel):
+    pass_id: str
+    ops: list[dict[str, Any]] = []
+    params: dict[str, Any] | None = None
+
+
+@app.post("/projects/{video_id}/system")
+async def apply_system_pass(video_id: str, body: SystemPassBody = Body(...)) -> dict[str, Any]:
+    """Accept a 'fix the rest' preview: persist its ops as the project's system
+    layer (Phase 3c). A later pass replaces the previous one wholesale (block 6);
+    the base + user layer are untouched (D2), so there is no version snapshot —
+    versions track base generations, and DELETE /system undoes this pass. Returns
+    the composed effective notation + origin map so the client can update in place."""
+    from sheetydrums.validate import validate_system_layer
+
+    with _project_lock(video_id):
+        project = _load_or_404(video_id)
+        layer: dict[str, Any] = {"pass_id": body.pass_id, "created_at": _now_iso(), "ops": body.ops}
+        if body.params is not None:
+            layer["params"] = body.params
+        try:
+            validate_system_layer(layer)
+            # Compose before persisting so a layer that composes to something
+            # invalid fails the request rather than bricking the read path.
+            effective, origin_map = compose(
+                project.get("notation") or {}, layer, project.get("selections") or []
+            )
+            project["system_layer"] = layer
+            store.save_project(project)
+        except (jsonschema.ValidationError, ValueError) as exc:
+            raise HTTPException(422, f"Could not apply the system pass: {exc}") from exc
+    return {
+        "pass_id": body.pass_id,
+        "system_layer": layer,
+        "effective": effective,
+        "origin_map": {str(k): v for k, v in origin_map.items()},
+    }
 
 
 @app.delete("/projects/{video_id}/system")

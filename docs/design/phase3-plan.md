@@ -60,7 +60,7 @@ verified selection(s) ─┐
    system ops = diff(base, candidate, targeted_lanes, exclude=verified_regions)   (§3c)
    preview = compose(base, {pass_id, ops}, selections) → {effective, origin_map, region conflicts}
      ▼ (job result: preview delta, nothing persisted)
- POST /projects/{id}/system {pass_id, ops, params}   ← Accept: persist + version snapshot
+ POST /projects/{id}/system {pass_id, ops, params}   ← Accept: persist (supersedes prior pass)
  DELETE /projects/{id}/system                         ← Discard/undo (exists)
 ```
 
@@ -95,7 +95,7 @@ verified selection(s) ─┐
 - `notation_to_system_ops(base, candidate, lanes, verified_regions) -> list[Op]` — diff base vs candidate within `lanes`, emitting `add`/`delete`/`reclassify`/`move` ops (`origin='system'`), skipping any op whose (bar, lane) is inside a verified region (compose drops those anyway — skipping here keeps the stored delta honest and the preview clean). Reuse `anchor.find_note`/`parse_position`/tolerance for the position match; a same-position instrument change → `reclassify`, a same-instrument position change within a small window → `move`, else `add`/`delete`.
 - Endpoints:
   - `POST /projects/{id}/fix-the-rest {selection_id}` → starts a **job** (reuse the `/retune` job + SSE + `JobState` machinery), streams round/score progress, terminal result = a **preview** `{pass_id, ops, params, effective, origin_map, region_conflicts}` (nothing persisted). `region_conflicts` from `anchor.region_status` so drift under a verified region is surfaced at preview time (matches the delta-view design).
-  - `POST /projects/{id}/system {pass_id, ops, params}` → **Accept**: `validate_system_layer`, write `system_layer` wholesale (supersedes any prior pass), snapshot a version (`store.append_version`), return the composed project. Reuse `_save_selections_or_422`-style compose-before-write guarding.
+  - `POST /projects/{id}/system {pass_id, ops, params}` → **Accept**: `validate_system_layer`, compose-before-write, write `system_layer` wholesale (supersedes any prior pass), return the composed effective + origin map. **No version snapshot** (decided in build): a pass leaves the base + user layer untouched (D2), versions track *base* generations, and `DELETE /system` is the pass's own undo — a later pass superseding an earlier one is intentional and non-recoverable (block 6). The winning `params` are stored **on the pass** (`system_layer.params`, a new optional schema field) for provenance / future delta regeneration, *not* in `project["params"]`.
   - `DELETE /projects/{id}/system` → already exists (Discard/undo the pass).
 - **Tests:** diff round-trips (base + emitted ops compose back to the candidate within targeted lanes); an op landing in a verified region is dropped; accept persists + versions + supersedes a prior pass; the whole `/fix-the-rest`→`/system` path with a fake pipeline.
 
