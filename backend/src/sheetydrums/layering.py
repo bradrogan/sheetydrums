@@ -261,7 +261,10 @@ def _note_near(
     notes: list[dict[str, Any]], position: str, tol: Fraction, instrument: str | None = None
 ) -> dict[str, Any] | None:
     """The note within `tol` of `position` (optionally of `instrument`), nearest
-    first, or None. Instrument-agnostic when `instrument` is None."""
+    first, or None. Instrument-agnostic when `instrument` is None. Uses the same
+    strict `< tol` bound as `anchor.find_note` (which `compose` resolves ops
+    with), so `_diff_bar`'s notion of "same note" matches how the emitted op will
+    later be applied."""
     target = parse_position(position)
     best: dict[str, Any] | None = None
     best_dist: Fraction | None = None
@@ -269,7 +272,7 @@ def _note_near(
         if instrument is not None and n["instrument"] != instrument:
             continue
         dist = abs(parse_position(n["position"]) - target)
-        if dist <= tol and (best_dist is None or dist < best_dist):
+        if dist < tol and (best_dist is None or dist < best_dist):
             best, best_dist = n, dist
     return best
 

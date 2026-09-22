@@ -1020,7 +1020,7 @@ async def apply_system_pass(video_id: str, body: SystemPassBody = Body(...)) -> 
             )
             project["system_layer"] = layer
             store.save_project(project)
-        except (jsonschema.ValidationError, ValueError) as exc:
+        except (jsonschema.ValidationError, ValueError, KeyError) as exc:
             raise HTTPException(422, f"Could not apply the system pass: {exc}") from exc
     return {
         "pass_id": body.pass_id,
