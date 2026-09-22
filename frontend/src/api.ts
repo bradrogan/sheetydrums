@@ -240,6 +240,66 @@ export async function clearSystemPass(videoId: string): Promise<void> {
   await ok(await fetch(`/projects/${encodeURIComponent(videoId)}/system`, { method: 'DELETE' }));
 }
 
+// === "Fix the rest of the song for this" (Phase 3) =======================
+
+// Terminal `result` of a fix-the-rest job: the search's proposed system pass +
+// its composed preview. NOT saved — the caller renders it and either applies
+// (applySystemPass) or discards.
+export interface FixPreview {
+  preview: true;
+  video_id: string;
+  pass_id: string;
+  ops: Op[];
+  params: PipelineParams;
+  effective: Notation; // base + this pass + verified selections, composed
+  origin_map: OriginMap;
+  converged: boolean;
+  score_f1: number;
+  targeted_lanes: string[];
+}
+
+// POST /projects/{id}/fix-the-rest → a job whose stream carries a FixPreview.
+export async function startFixTheRest(videoId: string, selectionId?: string): Promise<string> {
+  const resp = await ok(
+    await fetch(`/projects/${encodeURIComponent(videoId)}/fix-the-rest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selection_id: selectionId ?? null }),
+    }),
+  );
+  const { job_id } = (await resp.json()) as { job_id: string };
+  return job_id;
+}
+
+export interface FixCallbacks {
+  onProgress: (msg: string) => void;
+  onResult: (preview: FixPreview) => void;
+  onFailure: (error: string) => void;
+}
+
+// Same SSE shape as streamJob; the terminal `result` is a FixPreview.
+export function streamFixTheRest(jobId: string, cb: FixCallbacks): EventSource {
+  return streamJob(jobId, {
+    onProgress: cb.onProgress,
+    onResult: (payload) => cb.onResult(payload as unknown as FixPreview),
+    onFailure: cb.onFailure,
+  });
+}
+
+// POST /projects/{id}/system — accept a fix-the-rest preview as the system layer.
+export async function applySystemPass(
+  videoId: string,
+  pass: { pass_id: string; ops: Op[]; params?: PipelineParams },
+): Promise<void> {
+  await ok(
+    await fetch(`/projects/${encodeURIComponent(videoId)}/system`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pass),
+    }),
+  );
+}
+
 // === Base version snapshots + revert (re-tune safety net) ===
 export interface Version {
   version_id: string;

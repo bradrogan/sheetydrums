@@ -99,18 +99,18 @@ verified selection(s) ─┐
   - `DELETE /projects/{id}/system` → already exists (Discard/undo the pass).
 - **Tests:** diff round-trips (base + emitted ops compose back to the candidate within targeted lanes); an op landing in a verified region is dropped; accept persists + versions + supersedes a prior pass; the whole `/fix-the-rest`→`/system` path with a fake pipeline.
 
-### §3d — frontend launcher + preview (`edit.ts`, `main.ts`, `render.ts`, `api.ts`)
+### §3d — frontend launcher + preview (`fixrest.ts`, `main.ts`, `edit.ts`, `api.ts`) — **shipped**
 
-- **Launcher:** "Fix the rest of the song for this" in the edit hub (design: the bottom-left slot where `#poo-doodle` sits), enabled when ≥1 verified selection exists, labelled with the triggering selection (lane + bar range).
-- **Job + preview:** call `POST /fix-the-rest`, stream progress into the same status UI as the tuning pane; on result, render the preview through the **existing delta view** — system-coloured (`#d9660f`, already reserved in `render.ts`'s origin path) adds/reclassifies, ghosted removals, verified sections still overlaid in the user colour, drifted regions flagged. Reuse the tuning-pane **Accept/Discard** review UX (Q7) verbatim — Accept → `POST /system`, Discard → drop (or `DELETE /system` if it was somehow persisted).
-- No new rendering primitives — the origin colouring, delta highlight, and review pane all exist from Phase 2 + Q7.
+- **Launcher:** "✨ Fix the rest…" button in the edit hub (next to Tune; edit-mode-only via CSS). Clicking with no verified sections shows a hint to verify first; with a system pass already applied it shows Re-run / Remove.
+- **Job + preview:** `api.startFixTheRest` → `streamFixTheRest` streams progress into the `#fixrest-panel`; the terminal `FixPreview` (composed `effective` + `pass_id` + `ops` + `params` + `score_f1` + `targeted_lanes`) is previewed by feeding `effective` to **`EditHandle.preview`** (the same edit-layer path the re-tune preview uses — verified sections stay overlaid, changed bars highlight, drawn in place). A small review panel shows +add/−remove counts, the targeted lanes, and the F1 fit, with **Apply** (`POST /system`) / **Discard** (`clearPreview`). Remove uses `DELETE /system`.
+- **Deferred:** per-notehead **system-colour** on the preview (the backend returns `origin_map`, but the renderer colours by user-selection regions only today). The delta reads as changed-bar highlighting for now; precise per-note colouring lands with the **stacked before/after delta view** (v2-backlog) that reworks this surface anyway.
 
 ## Phasing
 
 - **3a** — `sheetydrums.matching` (promoted harness matcher) + `search/score.py` + tests. *Pure, no models — the load-bearing core.*
 - **3b** — `search/propose.py` (knob-map) + `search/loop.py` (search + capped auto-loop) + fake-pipeline tests.
 - **3c** — `notation_to_system_ops` + `POST /fix-the-rest` job + `POST /system` accept + tests.
-- **3d** — frontend launcher + preview wiring (reuses delta view + Q7 review pane).
+- **3d** — frontend launcher + preview wiring (reuses the edit-layer preview + Q7 review pane). **Shipped** — completes the Phase-3 (heuristic, no-LLM) end-to-end loop.
 - Then **Phase 4** (local LLM proposer behind the block-5a interface) and **Phase 5** (versioning diff UI; revert already shipped).
 
 ## Risks / notes

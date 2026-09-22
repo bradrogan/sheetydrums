@@ -3,6 +3,7 @@ import { createYouTubePlayer, type PlayerHandle } from './playback';
 import { createAudioPlayer } from './audioPlayer';
 import { SyncController } from './sync';
 import { setupEditing, editSession, type EditHandle } from './edit';
+import { setupFixTheRest } from './fixrest';
 import { setupTuning } from './tuning';
 import { openSettings } from './settings';
 import { injectPoo } from './poo';
@@ -358,6 +359,10 @@ async function showProject(videoId: string, opts?: { edit?: boolean }): Promise<
   byId('raw').textContent = JSON.stringify(events, null, 2);
 
   const sync = new SyncController(model);
+  // Persisted verified selections (the user layer). edit.ts mutates this array
+  // in place as selections are committed; the fix-the-rest launcher reads the
+  // same reference to know whether there's anything to learn from.
+  const selections = (project.selections ?? []) as unknown as api.Selection[];
   const editHandle = setupEditing({
     project,
     notation: events,
@@ -366,9 +371,7 @@ async function showProject(videoId: string, opts?: { edit?: boolean }): Promise<
     editToggle: byId('edit-toggle') as HTMLButtonElement,
     saveBtn: byId('save-btn') as HTMLButtonElement,
     scoreEl: byId('score'),
-    // Persisted verified selections (the user layer) to draw as bands. edit.ts
-    // mutates this array in place as selections are committed — no full reload.
-    selections: (project.selections ?? []) as unknown as api.Selection[],
+    selections,
     // Raw base notation, so removing a selection reverts its region to it.
     base: (project.base_notation ?? project.notation) as Notation,
     // Left-panel container the editing controls render into.
@@ -376,6 +379,12 @@ async function showProject(videoId: string, opts?: { edit?: boolean }): Promise<
   });
   await setupPlayback(project, model, sync);
   setupTuningPanel(project, events, editHandle);
+  setupFixTheRest({
+    project,
+    editHandle,
+    selections,
+    reload: () => { void showProject(project.video_id, { edit: true }); },
+  });
   // Re-enter edit mode after a rebuild requested it (e.g. accepting/discarding a
   // re-tune, which happens from edit mode) so the verified sections stay visible
   // instead of dropping the user to the plain view.

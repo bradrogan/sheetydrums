@@ -342,6 +342,11 @@ export function setupEditing(ctx: EditContext): EditHandle {
     document.getElementById('tune-toggle')?.classList.remove('active');
     const tuningPanel = document.getElementById('tuning-panel');
     if (tuningPanel) tuningPanel.hidden = true;
+    // Same for the "Fix the rest" launcher + panel (a stray preview is dropped by
+    // the rerender below; just clear the UI so it doesn't linger).
+    document.getElementById('fixrest-toggle')?.classList.remove('active');
+    const fixrestPanel = document.getElementById('fixrest-panel');
+    if (fixrestPanel) fixrestPanel.hidden = true;
     editSession.dirty = false;
     sel.clear();
     hideToolbar();
