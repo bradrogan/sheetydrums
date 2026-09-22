@@ -18,6 +18,10 @@
       "type": "array",
       "items": { "$ref": "selection.schema.json#/$defs/Op" },
       "description": "The proposed edits, same op shapes as a selection's ops; each carries origin='system'."
+    },
+    "params": {
+      "type": "object",
+      "description": "Optional: the pipeline params the pass's search settled on, recorded for provenance/audit and to regenerate the delta if the base later changes. Distinct from the project's base `params` (a system pass does NOT change the base or its params); inert at compose time — compose reads only `ops`."
     }
   }
 }

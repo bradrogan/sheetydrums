@@ -564,6 +564,10 @@ export interface SystemLayerTuningPhase2ContainerFilledByPhase3 {
         origin?: "user" | "system";
       }
   )[];
+  /**
+   * Optional: the pipeline params the pass's search settled on, recorded for provenance/audit and to regenerate the delta if the base later changes. Distinct from the project's base `params` (a system pass does NOT change the base or its params); inert at compose time — compose reads only `ops`.
+   */
+  params?: {};
 }
 /**
  * Runtime-only field on GET responses (not persisted): the raw BASE notation, i.e. the generator output before the system and user layers are composed in. `notation` on a GET response is the composed *effective* layer, so this is the only way to see what the pipeline actually produced. PUT /projects/{id} writes this layer, not `notation`.
