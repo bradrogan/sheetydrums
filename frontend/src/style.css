@@ -1107,6 +1107,49 @@ button#tune-toggle.active {
   border-color: var(--crayon-green);
 }
 
+/* === "Fix the rest" launcher + review (Phase 3d) ======================== */
+/* Edit-mode only, like Tune — its preview reads in the grid layout. */
+body:not(.editing-mode) #fixrest-toggle {
+  display: none;
+}
+button#fixrest-toggle.active {
+  background: var(--crayon-blue);
+  color: #04121a;
+  border-color: var(--crayon-blue);
+}
+.fixrest-panel[hidden],
+body:not(.editing-mode) #fixrest-panel {
+  display: none;
+}
+.fixrest-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border: 2px dashed var(--crayon-blue);
+  border-radius: var(--wobble);
+  background: rgba(80, 140, 220, 0.08);
+  font-size: 0.85rem;
+}
+.fixrest-head {
+  font-family: var(--font-hand);
+  font-size: 1.1rem;
+}
+.fixrest-status {
+  line-height: 1.35;
+}
+.fixrest-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.fixrest-actions button.accept {
+  background: var(--crayon-green);
+  color: #08160a;
+  border-color: var(--crayon-green);
+}
+
 /* Prominent re-run progress: a spinner + un-muted status so a long (uncached)
    re-run doesn't look like nothing happened. */
 .tuning-status.running {
