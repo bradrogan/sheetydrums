@@ -117,11 +117,14 @@ def fix_the_rest(
             memo[key] = run(params)
         return memo[key]
 
+    # The proposer is driven by the user's edit ops (their explicit intent), with
+    # the residual as the satisfaction oracle. Ops are fixed across rounds.
+    ops = [op for sel in selections for op in sel.get("ops", [])]
     best = _evaluate(base_params, cached_run, selections, set(), tol)
     tried: set[str] = set()
     rounds = 0
     while rounds < round_cap and best.score.f1 < match_threshold:
-        proposal = propose(best.score.residual, tried)
+        proposal = propose(ops, best.score.residual, tried)
         if proposal is None:
             break  # heuristic out of ideas → return best partial
         tried.update(proposal.knobs)

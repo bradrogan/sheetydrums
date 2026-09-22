@@ -31,14 +31,23 @@ def _notation(bars: dict[int, list[tuple[str, str]]]) -> dict[str, Any]:
     }
 
 
-def _selection(lane: str, bar: int, hits: list[tuple[str, str]], sid: str = "s") -> dict[str, Any]:
+def _selection(lane: str, bar: int, hits: list[tuple[str, str]],
+               ops: list[dict[str, Any]] | None = None, sid: str = "s") -> dict[str, Any]:
     return {
         "selection_id": sid, "origin": "user", "lane": lane,
         "bar_start": bar, "bar_end": bar,
         "notes": [{"bar": bar, "note": {"instrument": inst, "position": pos, "duration": "1/8"}}
                   for inst, pos in hits],
-        "ops": [], "verified": True,
+        "ops": ops or [], "verified": True,
     }
+
+
+def _reclassify(bar: int, position: str, frm: str, to: str) -> dict[str, Any]:
+    return {"kind": "reclassify", "bar": bar, "position": position, "from": frm, "to": to}
+
+
+def _add(bar: int, position: str, instrument: str) -> dict[str, Any]:
+    return {"kind": "add", "bar": bar, "position": position, "instrument": instrument, "duration": "1/8"}
 
 
 def _base() -> dict[str, Any]:
@@ -72,53 +81,69 @@ def test_param_distance_and_targeted_lanes() -> None:
     assert targeted_lanes({"transcription.thresholds[tom]"}) == {"tom_high", "tom_mid", "tom_low"}
 
 
-# === proposer ============================================================
+# === proposer (ops-driven) ===============================================
 
 def _resid(*entries: tuple[int, str, str, str]) -> list[Mismatch]:
     # (bar, instrument, position, kind)
     return [Mismatch("s", b, inst, pos, kind) for b, inst, pos, kind in entries]
 
 
-def test_propose_hihat_misclassification() -> None:
-    # missing open + extra closed at the same slot → hi-hat classification knobs.
-    p = propose(_resid((1, "hihat_open", "0", "missing"), (1, "hihat_closed", "0", "extra")), set())
+def test_propose_reclassify_within_family_picks_split_knob() -> None:
+    # The user reclassified a closed hat to open; the candidate still shows
+    # closed → propose the hi-hat split knobs (a same-family reclassify).
+    ops = [_reclassify(1, "0", "hihat_closed", "hihat_open")]
+    resid = _resid((1, "hihat_open", "0", "missing"), (1, "hihat_closed", "0", "extra"))
+    p = propose(ops, resid, set())
     assert p is not None and p.knobs[0] == HAT
 
 
-def test_propose_tom_pitch_misclassification() -> None:
-    # tom_high (missing) + tom_mid (extra) at one slot: separate LANES but one
-    # ADTOF family → must propose the tom CLUSTERING knobs, not a threshold.
-    p = propose(_resid((1, "tom_high", "1/4", "missing"), (1, "tom_mid", "1/4", "extra")), set())
+def test_propose_tom_pitch_reclassify_across_lanes() -> None:
+    # tom_mid→tom_high is separate LANES but one ADTOF family: the single
+    # reclassify op carries both, so the tom clustering knobs are proposed — the
+    # cross-lane case residual-pairing missed.
+    ops = [_reclassify(1, "1/4", "tom_mid", "tom_high")]
+    resid = _resid((1, "tom_high", "1/4", "missing"), (1, "tom_mid", "1/4", "extra"))
+    p = propose(ops, resid, set())
     assert p is not None
     assert p.knobs == ("expander.tom_uniform_spread_hz", "expander.tom_min_cluster_gap_hz")
 
 
-def test_propose_cross_family_pair_is_not_misclassification() -> None:
-    # missing snare + extra kick at one slot: different families → NOT a
-    # reclassify; falls through to detection thresholds for each.
-    p = propose(_resid((1, "snare", "0", "missing"), (1, "kick", "0", "extra")), set())
+def test_propose_cross_family_reclassify_nudges_both_thresholds() -> None:
+    # crash→hihat_closed crosses ADTOF families (cymbal↔hihat): no split knob, so
+    # nudge both classes' detection thresholds (the honest best-available).
+    ops = [_reclassify(1, "0", "crash", "hihat_closed")]
+    resid = _resid((1, "hihat_closed", "0", "missing"), (1, "crash", "0", "extra"))
+    p = propose(ops, resid, set())
     assert p is not None
-    assert p.knobs[0].startswith("transcription.thresholds[")
+    assert set(p.knobs) == {"transcription.thresholds[hihat]", "transcription.thresholds[cymbal]"}
 
 
-def test_propose_detection_threshold_for_pure_missing() -> None:
-    p = propose(_resid((1, "snare", "1/2", "missing")), set())
+def test_propose_add_picks_detection_threshold() -> None:
+    ops = [_add(1, "1/2", "snare")]
+    p = propose(ops, _resid((1, "snare", "1/2", "missing")), set())
     assert p is not None and p.knobs == (SNARE_THR,)
 
 
-def test_propose_skips_tried_group_then_falls_through() -> None:
+def test_propose_skips_satisfied_ops() -> None:
+    # The op is already reproduced by the candidate (empty residual) → nothing to
+    # propose, even though an op exists.
+    ops = [_add(1, "1/2", "snare")]
+    assert propose(ops, [], set()) is None
+
+
+def test_propose_none_when_reclassify_group_exhausted() -> None:
+    # A same-family reclassify's only group is the split knobs; once tried there's
+    # no threshold fallback (a threshold can't fix an open/closed label). Honest.
+    ops = [_reclassify(1, "0", "hihat_closed", "hihat_open")]
     resid = _resid((1, "hihat_open", "0", "missing"), (1, "hihat_closed", "0", "extra"))
-    first = propose(resid, set())
+    first = propose(ops, resid, set())
     assert first is not None
-    tried = set(first.knobs)  # all hi-hat class knobs
-    nxt = propose(resid, tried)
-    # hi-hat class exhausted → next is the hi-hat detection threshold.
-    assert nxt is not None and nxt.knobs == ("transcription.thresholds[hihat]",)
+    assert propose(ops, resid, set(first.knobs)) is None
 
 
 def test_propose_none_when_exhausted() -> None:
-    resid = _resid((1, "snare", "1/2", "missing"))
-    assert propose(resid, {SNARE_THR}) is None
+    ops = [_add(1, "1/2", "snare")]
+    assert propose(ops, _resid((1, "snare", "1/2", "missing")), {SNARE_THR}) is None
 
 
 # === search + capped loop (fake pipeline) ================================
@@ -148,7 +173,9 @@ def test_tie_break_prefers_smallest_movement() -> None:
 
 
 def test_fix_the_rest_converges_and_targets_lane() -> None:
-    sel = _selection("hihat", 1, [("hihat_open", "0"), ("hihat_open", "1/2")])
+    ops = [_reclassify(1, "0", "hihat_closed", "hihat_open"),
+           _reclassify(1, "1/2", "hihat_closed", "hihat_open")]
+    sel = _selection("hihat", 1, [("hihat_open", "0"), ("hihat_open", "1/2")], ops=ops)
     out = fix_the_rest(_base(), _fake_hats(), [sel])
     assert out.converged and out.score.f1 == 1.0 and out.rounds >= 1
     assert targeted_lanes(set(out.tried_knobs)) == {"hihat"}
@@ -160,7 +187,7 @@ def test_fix_the_rest_detection_threshold() -> None:
         thr = KNOB_SPECS[SNARE_THR].get(params)
         hits = [("snare", "0")] + ([("snare", "1/2")] if thr <= 0.20 else [])
         return _notation({1: hits})
-    sel = _selection("snare", 1, [("snare", "0"), ("snare", "1/2")])
+    sel = _selection("snare", 1, [("snare", "0"), ("snare", "1/2")], ops=[_add(1, "1/2", "snare")])
     out = fix_the_rest(_base(), run, [sel])
     assert out.converged and out.score.f1 == 1.0
     assert KNOB_SPECS[SNARE_THR].get(out.params) <= 0.20
@@ -168,7 +195,8 @@ def test_fix_the_rest_detection_threshold() -> None:
 
 def test_fix_the_rest_returns_partial_when_unreachable() -> None:
     # No parameter opens the hats → the loop returns its best partial, not an error.
-    sel = _selection("hihat", 1, [("hihat_open", "0")])
+    sel = _selection("hihat", 1, [("hihat_open", "0")],
+                     ops=[_reclassify(1, "0", "hihat_closed", "hihat_open")])
 
     def stuck(params: dict[str, Any]) -> dict[str, Any]:
         return _notation({1: [("hihat_closed", "0")]})
@@ -189,8 +217,10 @@ def test_no_gain_high_priority_round_does_not_strand_fixable_low_priority() -> N
         bar2 = [("snare", "0")] + ([("snare", "1/2")] if snare_thr <= 0.20 else [])
         return _notation({1: bar1, 2: bar2})
 
-    hats = _selection("hihat", 1, [("hihat_open", "0")], sid="a")
-    snare = _selection("snare", 2, [("snare", "0"), ("snare", "1/2")], sid="b")
+    hats = _selection("hihat", 1, [("hihat_open", "0")],
+                      ops=[_reclassify(1, "0", "hihat_closed", "hihat_open")], sid="a")
+    snare = _selection("snare", 2, [("snare", "0"), ("snare", "1/2")],
+                       ops=[_add(2, "1/2", "snare")], sid="b")
     out = fix_the_rest(_base(), run, [hats, snare])
     # snare fully reproduced even though the hi-hat group came first and failed.
     assert out.score.per_selection["b"] == 1.0
@@ -207,7 +237,8 @@ def test_run_is_memoised_within_a_call() -> None:
         inst = "hihat_open" if thr > 0.45 else "hihat_closed"
         return _notation({1: [(inst, "0"), (inst, "1/2")]})
 
-    sel = _selection("hihat", 1, [("hihat_open", "0"), ("hihat_open", "1/2")])
+    sel = _selection("hihat", 1, [("hihat_open", "0"), ("hihat_open", "1/2")],
+                     ops=[_reclassify(1, "0", "hihat_closed", "hihat_open")])
     fix_the_rest(_base(), run, [sel])
     # Every distinct params dict is run at most once (the repeated default seed +
     # default grid point collapse to one call).

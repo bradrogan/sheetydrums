@@ -50,12 +50,12 @@ verified selection(s) ─┐
                        ▼
  POST /projects/{id}/fix-the-rest {selection_id}     (job; streams progress)
    loop ≤ D5.round_cap:
-     (a) heuristic proposer: {targeted lanes, residual mismatch} → {knobs, directions, bounds}
+     (a) heuristic proposer: {user edit ops, still-unsatisfied per residual} → {knobs}
      (b) search over those knobs — each candidate:
            build_pipeline(params, cache_dir) → candidate base notation   (cached upstream → seconds)
-           score = reproduce_F1(candidate, verified_selections)  [tie-break: collateral]   (§3a)
+           score = reproduce_F1(candidate, verified_selections)  [tie-break: min param movement]   (§3a)
          keep best; if best ≥ match_threshold → converged, stop
-         else feed residual mismatch back to (a) for a different knob set
+         else re-propose (residual marks which ops remain) for a different knob set
    winner params → candidate notation
    system ops = diff(base, candidate, targeted_lanes, exclude=verified_regions)   (§3c)
    preview = compose(base, {pass_id, ops}, selections) → {effective, origin_map, region conflicts}
@@ -79,13 +79,13 @@ verified selection(s) ─┐
 
 ### §3b — heuristic proposer + capped loop (`search/propose.py`, `search/loop.py`)
 
-- **Knob-map** (static table, the Phase-3 stand-in for the LLM; same output shape so Phase 4 drops in): keyed by the lane + the *kind* of residual mismatch, returns `{knobs: [...], directions: {...}, bounds: {...}}`. Grounded in `params.py`:
-  - `hihat` open/closed wrong → `expander.hihat_unimodal_open_threshold`, `expander.hihat_decay_max_seconds`, `expander.hihat_clearly_loose`/`clearly_tight`, `hihat_bimodal_min_fraction`.
-  - `tom_*` pitch wrong → `expander.tom_centroid_band_hz`, `tom_uniform_spread_hz`, `tom_min_cluster_gap_hz`.
-  - `ride`/`crash` swapped → `expander.cymbal_window_seconds`.
-  - missing/extra hits (FN/FP of an onset the class *can* fire) → `transcription.thresholds[<class>]` (direction: FN→lower, FP→higher).
-  - coarse snapping → `quantize.subdivisions_per_whole`.
-  - (separation knobs deliberately excluded from the default map — expensive, rarely the fix; reachable only if later rounds exhaust the cheap knobs.)
+- **Ops-driven knob-map** (static table, the Phase-3 stand-in for the LLM; same output shape so Phase 4 drops in). Per ai-tuning-loop.md block 5a, the proposer reads **the user's edit ops** — their explicit intent — not a re-inference from the reproduce-residual. The op *type* selects the knobs; the residual is only the **satisfaction oracle** (an op is proposed while the candidate still hasn't reproduced it). This dissolves the cross-lane gap that residual-pairing had: a `reclassify` carries `from→to` in one op even across lanes, so a tom_high↔tom_mid or crash↔hihat confusion needs no fragile pairing. Grounded in `params.py`:
+  - `reclassify` **within an ADTOF family** (hihat open↔closed, tom pitch, ride↔crash) → that family's expander split knobs (`expander.hihat_*`; `expander.tom_uniform_spread_hz`/`tom_min_cluster_gap_hz`; cymbal window deferred).
+  - `reclassify` **across families** (e.g. crash↔hihat) → an ADTOF class confusion → nudge both classes' `transcription.thresholds[...]` (best available; ADTOF has no knob to move an onset between classes — often a best-partial).
+  - `add` / `delete` → `transcription.thresholds[<class>]` for that instrument's ADTOF class.
+  - `move` → a timing/grid problem (`quantize.subdivisions_per_whole`) — deferred, not yet mapped.
+  - (separation knobs deliberately excluded — expensive, rarely the fix.)
+  - Groups are returned reclassify-first (most specific intent), then detection; a same-family reclassify has **no** threshold fallback (a threshold can't fix a label) — if its split knobs are exhausted the proposer is honestly out of ideas.
 - **Capped auto-loop** (block 5c, owner-locked 2026-09-20): run (a)+(b); if best `F1 ≥ match_threshold` stop; else re-invoke the proposer with the **residual** + knobs-already-tried so it picks a *different* axis; stop at round cap (3), convergence, or when the proposer is **out of ideas**. Return best params **across all rounds** + the residual it couldn't fix. *(Refinement, post-review: a no-gain round does NOT stop the loop — block 5c's "early stop on no gain" would strand a fixable low-priority group behind a higher-priority one the knobs can't reach. The round cap + out-of-ideas bound the cost instead; `run` is memoised per invocation so the repeated seed/default params re-run at most once.)*
 - **Search (b):** coordinate descent over the proposed knobs — coarse grid per knob within `bounds`, then one local refine around the best; ≤ D5 candidates. Each candidate = `build_pipeline(config, PipelineParams.from_dict(cand), cache_dir=store.stages_dir(id)).transcribe(audio)` → `serialize_to_schema` → score. Cached upstream stages make this ~seconds. **Rank candidates by `(overall_f1` desc, parameter-distance-from-current asc`)`** (D3): among equal-F1 candidates the gentlest knob move wins, so a fix propagates globally without over-reaching. Parameter distance is a normalised sum over the touched knobs (each `(value − current) / range`).
 - **Tests:** proposer returns the hihat knobs for a hihat residual, tom knobs for a tom residual, and a *different* set on the second round given a residual + tried-set; loop stops at cap and returns the best partial. Search uses a **fake pipeline** (a function mapping params→notation) so the loop/scoring are tested with zero model installs — mirrors `test_pipeline.py`'s DI fakes.
