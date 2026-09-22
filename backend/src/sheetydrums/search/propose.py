@@ -4,8 +4,12 @@ next, keeping the search low-dimensional. Same output shape as the future
 `LLMSuggester.propose`, so Phase 4 drops in behind it.
 
 It reads the residual the scorer produced and classifies the errors:
-  - a **missing + extra pair in the same lane at one slot** → a classification
-    error (open/closed hat, tom pitch) → that lane's expander knobs;
+  - a **missing + extra pair of the same ADTOF family at one slot** → a
+    classification error (open↔closed hat, tom pitch, ride↔crash) → that
+    family's expander knobs. "Family" is the ADTOF detection class the expander
+    splits (hihat → closed/open, tom → high/mid/low, cymbal → ride/crash), *not*
+    the staff lane: the tom pitches are separate lanes but one family, so a
+    tom_high↔tom_mid swap must group by family to reach the tom clustering knobs.
   - a leftover **missing** or **extra** for an instrument → the ADTOF detection
     threshold for that instrument's class.
 Groups are returned in that priority order, skipping any whose knobs were all
@@ -16,12 +20,12 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sheetydrums.anchor import lane_of
 from sheetydrums.search.knobs import ADTOF_CLASS_OF, KNOB_SPECS
 from sheetydrums.search.score import Mismatch
 
-# Classification knobs per lane (scalar-only for now; ride/crash's tuple window
-# is deferred, so a cymbal misclassification yields no classification group).
+# Classification knobs per ADTOF family (scalar-only for now; ride/crash's tuple
+# window is deferred, so a `cymbal` misclassification yields no class group and
+# falls through to the detection threshold / out-of-ideas).
 _CLASS_KNOBS: dict[str, tuple[str, ...]] = {
     "hihat": (
         "expander.hihat_unimodal_open_threshold",
@@ -29,11 +33,8 @@ _CLASS_KNOBS: dict[str, tuple[str, ...]] = {
         "expander.hihat_clearly_tight",
         "expander.hihat_bimodal_min_fraction",
     ),
-    "tom_high": ("expander.tom_uniform_spread_hz", "expander.tom_min_cluster_gap_hz"),
+    "tom": ("expander.tom_uniform_spread_hz", "expander.tom_min_cluster_gap_hz"),
 }
-# tom lanes share one clustering knob group.
-for _tom in ("tom_mid", "tom_low"):
-    _CLASS_KNOBS[_tom] = _CLASS_KNOBS["tom_high"]
 
 
 @dataclass(frozen=True)
@@ -46,22 +47,26 @@ def _candidate_groups(residual: list[Mismatch]) -> list[Proposal]:
     """Ordered proposals implied by the residual, highest-priority first."""
     groups: list[Proposal] = []
 
-    # 1) Classification errors: a missing + extra in the same lane at one slot.
+    # 1) Classification errors: a missing + extra of the SAME ADTOF family at one
+    #    slot (one detected onset, wrong sub-label). Group by family, not lane —
+    #    tom_high↔tom_mid are separate lanes but one family.
     by_slot: dict[tuple[str | None, int, str], dict[str, set[str]]] = defaultdict(
         lambda: {"missing": set(), "extra": set()}
     )
     for m in residual:
         by_slot[(m.selection_id, m.bar, m.position)][m.kind].add(m.instrument)
-    misclassified_lanes: list[str] = []
+    misclassified: list[str] = []
     for slot in by_slot.values():
         for miss in slot["missing"]:
             for extra in slot["extra"]:
-                if lane_of(miss) == lane_of(extra) and lane_of(miss) not in misclassified_lanes:
-                    misclassified_lanes.append(lane_of(miss))
-    for lane in misclassified_lanes:
-        knobs = _CLASS_KNOBS.get(lane)
+                fam = ADTOF_CLASS_OF.get(miss)
+                if miss != extra and fam is not None and fam == ADTOF_CLASS_OF.get(extra) \
+                        and fam not in misclassified:
+                    misclassified.append(fam)
+    for fam in misclassified:
+        knobs = _CLASS_KNOBS.get(fam)
         if knobs:
-            groups.append(Proposal(knobs, f"reclassify errors in the {lane} lane"))
+            groups.append(Proposal(knobs, f"reclassify errors in the {fam} family"))
 
     # 2) Detection errors: leftover missing / extra for an instrument's class.
     classes_wrong: list[str] = []

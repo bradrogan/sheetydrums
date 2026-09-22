@@ -80,6 +80,10 @@ def reproduce_score(
         sid = sel.get("selection_id")
         lane = sel["lane"]
         instruments = lane_instruments(lane)
+        if not instruments:
+            # A lane with no schema instrument would score as nothing — the
+            # region silently stops constraining the search. Fail loud instead.
+            raise ValueError(f"selection lane {lane!r} maps to no schema instrument")
         bar_start, bar_end = sel["bar_start"], sel["bar_end"]
 
         # Frozen labels (ground truth) grouped by (bar, instrument).

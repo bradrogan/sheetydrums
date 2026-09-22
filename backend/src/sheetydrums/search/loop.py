@@ -14,6 +14,7 @@ is fully testable with a fake (no models); Phase 3c wires the real cached
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from fractions import Fraction
@@ -92,10 +93,31 @@ def fix_the_rest(
     round_cap: int = ROUND_CAP,
     tol: Fraction = DEFAULT_TOL,
 ) -> SearchOutcome:
-    """Propose→search rounds until converged / capped / no-gain / out-of-ideas.
-    Each round feeds the current residual back to the proposer with the
-    knobs-already-tried, so it explores a new axis instead of re-searching one."""
-    best = _evaluate(base_params, run, selections, set(), tol)
+    """Propose→search rounds until converged, the round cap is hit, or the
+    proposer runs out of ideas. Each round feeds the current residual back to the
+    proposer with the knobs-already-tried, so it explores a new axis instead of
+    re-searching one.
+
+    A no-gain round does NOT stop the loop: the proposer emits groups in a fixed
+    priority order, so a high-priority-but-unreachable error (e.g. a timbral
+    open/closed miss the decay-ratio knobs can't fix) must not abort before a
+    lower-priority *fixable* error (e.g. a missing snare) is tried. The round cap
+    and out-of-ideas bound the cost instead. (Refines block 5c's "early stop on
+    no gain", which a review found could strand a fixable group.)
+
+    `run` is memoised for this invocation, so the repeated default/seed params
+    (every knob's grid includes its default; each round re-seeds from the best)
+    are re-run at most once — complementing the stage cache.
+    """
+    memo: dict[str, dict[str, Any]] = {}
+
+    def cached_run(params: dict[str, Any]) -> dict[str, Any]:
+        key = json.dumps(params, sort_keys=True)
+        if key not in memo:
+            memo[key] = run(params)
+        return memo[key]
+
+    best = _evaluate(base_params, cached_run, selections, set(), tol)
     tried: set[str] = set()
     rounds = 0
     while rounds < round_cap and best.score.f1 < match_threshold:
@@ -104,10 +126,9 @@ def fix_the_rest(
             break  # heuristic out of ideas → return best partial
         tried.update(proposal.knobs)
         rounds += 1
-        cand = search(proposal, best.params, run, selections, tol)
-        if cand.score.f1 <= best.score.f1:
-            break  # no-gain round → early stop (block 5c)
-        best = cand
+        cand = search(proposal, best.params, cached_run, selections, tol)
+        if cand.score.f1 > best.score.f1:  # keep only genuine gains; no-gain → try next group
+            best = cand
     return SearchOutcome(
         params=best.params,
         score=best.score,

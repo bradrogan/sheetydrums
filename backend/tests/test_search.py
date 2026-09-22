@@ -4,7 +4,10 @@ so the loop/scoring are exercised with zero model installs (DI, like
 test_pipeline.py)."""
 from __future__ import annotations
 
+import json
 from typing import Any
+
+import pytest
 
 from sheetydrums.params import PipelineParams
 from sheetydrums.search.knobs import KNOB_SPECS, param_distance, targeted_lanes
@@ -82,6 +85,22 @@ def test_propose_hihat_misclassification() -> None:
     assert p is not None and p.knobs[0] == HAT
 
 
+def test_propose_tom_pitch_misclassification() -> None:
+    # tom_high (missing) + tom_mid (extra) at one slot: separate LANES but one
+    # ADTOF family → must propose the tom CLUSTERING knobs, not a threshold.
+    p = propose(_resid((1, "tom_high", "1/4", "missing"), (1, "tom_mid", "1/4", "extra")), set())
+    assert p is not None
+    assert p.knobs == ("expander.tom_uniform_spread_hz", "expander.tom_min_cluster_gap_hz")
+
+
+def test_propose_cross_family_pair_is_not_misclassification() -> None:
+    # missing snare + extra kick at one slot: different families → NOT a
+    # reclassify; falls through to detection thresholds for each.
+    p = propose(_resid((1, "snare", "0", "missing"), (1, "kick", "0", "extra")), set())
+    assert p is not None
+    assert p.knobs[0].startswith("transcription.thresholds[")
+
+
 def test_propose_detection_threshold_for_pure_missing() -> None:
     p = propose(_resid((1, "snare", "1/2", "missing")), set())
     assert p is not None and p.knobs == (SNARE_THR,)
@@ -157,6 +176,52 @@ def test_fix_the_rest_returns_partial_when_unreachable() -> None:
     out = fix_the_rest(_base(), stuck, [sel])
     assert not out.converged and out.score.f1 < 0.90
     assert out.rounds >= 1  # it tried before giving up
+
+
+def test_no_gain_high_priority_round_does_not_strand_fixable_low_priority() -> None:
+    # Residual has BOTH an unfixable hi-hat misclassification (higher priority)
+    # and a fixable missing snare. The hi-hat round makes no gain; the loop must
+    # still reach the snare-threshold round and converge (review finding #1).
+    def run(params: dict[str, Any]) -> dict[str, Any]:
+        # hats are always closed (no knob opens them) → hihat miss is unfixable.
+        snare_thr = KNOB_SPECS[SNARE_THR].get(params)
+        bar1 = [("hihat_closed", "0")]
+        bar2 = [("snare", "0")] + ([("snare", "1/2")] if snare_thr <= 0.20 else [])
+        return _notation({1: bar1, 2: bar2})
+
+    hats = _selection("hihat", 1, [("hihat_open", "0")], sid="a")
+    snare = _selection("snare", 2, [("snare", "0"), ("snare", "1/2")], sid="b")
+    out = fix_the_rest(_base(), run, [hats, snare])
+    # snare fully reproduced even though the hi-hat group came first and failed.
+    assert out.score.per_selection["b"] == 1.0
+    assert KNOB_SPECS[SNARE_THR].get(out.params) <= 0.20
+    assert out.rounds >= 2  # tried the hi-hat group, then the snare group
+
+
+def test_run_is_memoised_within_a_call() -> None:
+    calls: list[str] = []
+
+    def run(params: dict[str, Any]) -> dict[str, Any]:
+        calls.append(json.dumps(params, sort_keys=True))
+        thr = KNOB_SPECS[HAT].get(params)
+        inst = "hihat_open" if thr > 0.45 else "hihat_closed"
+        return _notation({1: [(inst, "0"), (inst, "1/2")]})
+
+    sel = _selection("hihat", 1, [("hihat_open", "0"), ("hihat_open", "1/2")])
+    fix_the_rest(_base(), run, [sel])
+    # Every distinct params dict is run at most once (the repeated default seed +
+    # default grid point collapse to one call).
+    assert len(calls) == len(set(calls))
+
+
+def test_empty_lane_raises() -> None:
+    sel = _selection("bogus_lane", 1, [], sid="x")
+
+    def run(params: dict[str, Any]) -> dict[str, Any]:
+        return _notation({1: []})
+
+    with pytest.raises(ValueError, match="no schema instrument"):
+        fix_the_rest(_base(), run, [sel])
 
 
 def test_base_already_correct_needs_no_rounds() -> None:

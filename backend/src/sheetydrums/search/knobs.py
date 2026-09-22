@@ -64,7 +64,9 @@ def _scalar(name: str, group: str, field: str, lanes: tuple[str, ...],
 
     def setv(p: dict[str, Any], value: float) -> dict[str, Any]:
         out = copy.deepcopy(p)
-        out.setdefault(group, {})[field] = value
+        grp = out.get(group) or {}  # `or {}` — the key may be present but None
+        grp[field] = value
+        out[group] = grp
         return out
 
     return KnobSpec(name, lanes, default, grid, get, setv)
@@ -86,9 +88,11 @@ def _threshold(cls: str) -> KnobSpec:
 
     def setv(p: dict[str, Any], value: float) -> dict[str, Any]:
         out = copy.deepcopy(p)
-        t = list((out.get("transcription") or {}).get("thresholds") or ADTOF_DEFAULTS)
+        grp = out.get("transcription") or {}  # key may be present but None
+        t = list(grp.get("thresholds") or ADTOF_DEFAULTS)
         t[idx] = value
-        out.setdefault("transcription", {})["thresholds"] = t
+        grp["thresholds"] = t
+        out["transcription"] = grp
         return out
 
     return KnobSpec(f"transcription.thresholds[{cls}]", THRESHOLD_LANES[cls], default, grid, get, setv)
